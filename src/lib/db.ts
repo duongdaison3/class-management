@@ -265,3 +265,99 @@ export const syncPendingQueue = async () => {
     return 0
   }
 }
+const fromRemotePayload = (payload: Record<string, unknown>) => {
+  const fieldMap: Record<string, string> = {
+    owner_id: 'ownerId',
+    class_id: 'classId',
+    school_id: 'schoolId',
+    student_id: 'studentId',
+    student_ids: 'studentIds',
+    full_name: 'fullName',
+    teacher_name: 'teacherName',
+    due_date: 'dueDate',
+    created_at: 'createdAt',
+  }
+
+  return Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [fieldMap[key] ?? key, value]),
+  )
+}
+
+export const hydrateFromSupabase = async () => {
+  if (!supabase) {
+    return false
+  }
+
+  const results = await Promise.all([
+    supabase.from('schools').select('*'),
+    supabase.from('classes').select('*'),
+    supabase.from('groups').select('*'),
+    supabase.from('students').select('*'),
+    supabase.from('attendance').select('*'),
+    supabase.from('rewards').select('*'),
+    supabase.from('assignments').select('*'),
+    supabase.from('assessments').select('*'),
+  ])
+  const failedResult = results.find((result) => result.error)
+  if (failedResult?.error) {
+    throw failedResult.error
+  }
+
+  const [schoolsResult, classesResult, groupsResult, studentsResult, attendanceResult, rewardsResult, assignmentsResult, assessmentsResult] = results
+  const schools = (schoolsResult.data ?? []).map(fromRemotePayload) as unknown as School[]
+  const classes = (classesResult.data ?? []).map(fromRemotePayload) as unknown as ClassRoom[]
+  const groups = (groupsResult.data ?? []).map(fromRemotePayload) as unknown as StudentGroup[]
+  const students = (studentsResult.data ?? []).map(fromRemotePayload) as unknown as Student[]
+  const attendance = (attendanceResult.data ?? []).map(fromRemotePayload) as unknown as AttendanceRecord[]
+  const rewards = (rewardsResult.data ?? []).map(fromRemotePayload) as unknown as Reward[]
+  const assignments = (assignmentsResult.data ?? []).map(fromRemotePayload) as unknown as Assignment[]
+  const assessments = (assessmentsResult.data ?? []).map(fromRemotePayload) as unknown as Assessment[]
+
+  await db.transaction(
+    'rw',
+    [db.schools, db.classes, db.groups, db.students, db.attendance, db.rewards, db.assignments, db.assessments, db.syncQueue],
+    async () => {
+      const demoSchools = await db.schools.where('ownerId').equals('teacher-001').toArray()
+      const demoSchoolIds = new Set(demoSchools.map((school) => school.id))
+      const demoClasses = demoSchoolIds.size > 0
+        ? await db.classes.filter((classRoom) => demoSchoolIds.has(classRoom.schoolId)).toArray()
+        : []
+      const demoClassIds = new Set(demoClasses.map((classRoom) => classRoom.id))
+      const demoEntityIds = new Set<string>([
+        ...demoSchoolIds,
+        ...demoClassIds,
+        ...(await db.groups.toArray()).filter((group) => demoClassIds.has(group.classId)).map((group) => group.id),
+        ...(await db.students.toArray()).filter((student) => demoClassIds.has(student.classId)).map((student) => student.id),
+        ...(await db.attendance.toArray()).filter((record) => demoClassIds.has(record.classId)).map((record) => record.id),
+        ...(await db.rewards.toArray()).filter((reward) => demoClassIds.has(reward.classId)).map((reward) => reward.id),
+        ...(await db.assignments.toArray()).filter((assignment) => demoClassIds.has(assignment.classId)).map((assignment) => assignment.id),
+        ...(await db.assessments.toArray()).filter((assessment) => demoClassIds.has(assessment.classId)).map((assessment) => assessment.id),
+      ])
+
+      if (demoSchoolIds.size > 0) {
+        await db.schools.bulkDelete([...demoSchoolIds])
+        await db.classes.bulkDelete([...demoClassIds])
+        if (demoClassIds.size > 0) {
+          await db.groups.where('classId').anyOf([...demoClassIds]).delete()
+          await db.students.where('classId').anyOf([...demoClassIds]).delete()
+          await db.attendance.where('classId').anyOf([...demoClassIds]).delete()
+          await db.rewards.where('classId').anyOf([...demoClassIds]).delete()
+          await db.assignments.where('classId').anyOf([...demoClassIds]).delete()
+          await db.assessments.where('classId').anyOf([...demoClassIds]).delete()
+        }
+        await db.syncQueue.filter((item) => demoEntityIds.has(item.entityId)).delete()
+      }
+
+      await db.schools.bulkPut(schools)
+      await db.classes.bulkPut(classes)
+      await db.groups.bulkPut(groups)
+      await db.students.bulkPut(students)
+      await db.attendance.bulkPut(attendance)
+      await db.rewards.bulkPut(rewards)
+      await db.assignments.bulkPut(assignments)
+      await db.assessments.bulkPut(assessments)
+    },
+  )
+
+  return true
+}

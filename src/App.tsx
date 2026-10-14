@@ -25,7 +25,7 @@ import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import { z } from 'zod'
 import type { Session } from '@supabase/supabase-js'
 import { ensureDemoData } from './data/seed'
-import { db, queueSyncOperation, syncPendingQueue } from './lib/db'
+import { db, hydrateFromSupabase, queueSyncOperation, syncPendingQueue } from './lib/db'
 import { supabase } from './lib/supabase'
 import { attendanceLabels, type AttendanceStatus, type StudentGroup } from './types'
 
@@ -175,6 +175,7 @@ function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine)
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(Boolean(supabase))
+  const [remoteHydrated, setRemoteHydrated] = useState(!supabase)
   const [authError, setAuthError] = useState('')
   const [selectedSchoolId, setSelectedSchoolId] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
@@ -214,7 +215,9 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void ensureDemoData()
+    if (!supabase) {
+      void ensureDemoData()
+    }
 
     const handleOnline = () => setIsOnline(true)
     const handleOffline = () => setIsOnline(false)
@@ -229,12 +232,37 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!isOnline || !supabase || !session) {
+    if (!supabase || !session) {
+      return
+    }
+
+    let mounted = true
+    void hydrateFromSupabase()
+      .then(() => {
+        if (mounted) {
+          setRemoteHydrated(true)
+        }
+      })
+      .catch((error) => {
+        console.error('Không thể tải dữ liệu từ Supabase:', error)
+        if (mounted) {
+          setAuthError(error instanceof Error ? error.message : 'Không thể tải dữ liệu từ Supabase')
+          setRemoteHydrated(false)
+        }
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [session])
+
+  useEffect(() => {
+    if (!isOnline || !supabase || !session || !remoteHydrated) {
       return
     }
 
     void syncPendingQueue()
-  }, [isOnline, session])
+  }, [isOnline, remoteHydrated, session])
 
   const schools = useLiveQuery(() => db.schools.orderBy('name').toArray(), []) ?? []
   const classes = useLiveQuery(() => db.classes.orderBy('name').toArray(), []) ?? []
