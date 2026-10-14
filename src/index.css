@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.92);
+  background: #040816;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  background: #040816;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(34, 211, 238, 0.18), transparent 22%),
+    radial-gradient(circle at top right, rgba(168, 85, 247, 0.18), transparent 28%),
+    linear-gradient(180deg, #040816 0%, #0b1020 30%, #0f172a 100%);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+@layer components {
+  .app-shell {
+    background:
+      radial-gradient(circle at top left, rgba(34, 211, 238, 0.12), transparent 18%),
+      radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.14), transparent 22%),
+      linear-gradient(180deg, rgba(2, 6, 23, 0.92), rgba(15, 23, 42, 0.92));
+  }
+
+  .glass-sidebar {
+    @apply border-r border-white/10 bg-slate-950/35 backdrop-blur-2xl shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)];
+  }
+
+  .glass-header {
+    @apply border-b border-white/10 bg-slate-950/35 backdrop-blur-2xl shadow-[0_12px_30px_rgba(2,6,23,0.2)];
+  }
+
+  .panel {
+    @apply rounded-[28px] border border-white/10 bg-slate-900/60 shadow-[0_24px_60px_rgba(15,23,42,0.45)] backdrop-blur-xl;
+  }
+
+  .soft-primary {
+    @apply inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_18px_30px_rgba(34,211,238,0.28)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .soft-secondary {
+    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-cyan-400/40 hover:bg-white/10;
+  }
+
+  .soft-ghost {
+    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-white/20 hover:bg-slate-900/70;
+  }
+
+  .chip-pill {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-300;
+  }
+
+  .input-shell {
+    @apply w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/15;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+}
