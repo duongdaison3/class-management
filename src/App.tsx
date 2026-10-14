@@ -289,6 +289,9 @@ function App() {
 
   useEffect(() => {
     if (!selectedSchoolId && schools[0]?.id) setSelectedSchoolId(schools[0].id)
+    if (selectedSchoolId && !schools.some((school) => school.id === selectedSchoolId)) {
+      setSelectedSchoolId(schools[0]?.id ?? '')
+    }
     if (!selectedClassId && schoolClasses[0]?.id) setSelectedClassId(schoolClasses[0].id)
     if (selectedClassId && !schoolClasses.some((item) => item.id === selectedClassId)) {
       setSelectedClassId(schoolClasses[0]?.id ?? '')
