@@ -89,6 +89,37 @@ export const queueSyncOperation = async (
   operationType: SyncQueueItem['operationType'],
   payload: Record<string, unknown>,
 ) => {
+  const existingPending = await db.syncQueue
+    .filter((item) => item.entityId === entityId && (item.status === 'pending' || item.status === 'failed'))
+    .first()
+
+  if (existingPending) {
+    if (operationType === 'delete') {
+      await db.syncQueue.update(existingPending.id, {
+        operationType: 'delete',
+        payload: {},
+        status: 'pending',
+        retryCount: 0,
+        lastError: undefined,
+        lastAttemptedAt: undefined,
+        nextRetryAt: undefined,
+      })
+      return
+    }
+
+    if (existingPending.operationType === 'create') {
+      await db.syncQueue.update(existingPending.id, {
+        payload,
+        status: 'pending',
+        retryCount: 0,
+        lastError: undefined,
+        lastAttemptedAt: undefined,
+        nextRetryAt: undefined,
+      })
+      return
+    }
+  }
+
   await db.syncQueue.add({
     id: crypto.randomUUID(),
     entityType,

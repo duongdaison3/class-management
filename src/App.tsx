@@ -27,7 +27,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ensureDemoData } from './data/seed'
 import { db, hydrateFromSupabase, queueSyncOperation, syncPendingQueue } from './lib/db'
 import { supabase } from './lib/supabase'
-import { attendanceLabels, type AttendanceStatus, type StudentGroup } from './types'
+import { attendanceLabels, type Assignment, type Assessment, type AttendanceStatus, type ClassRoom, type Reward, type School, type Student, type StudentGroup } from './types'
 
 const studentSchema = z.object({
   fullName: z.string().min(2, 'Tên học sinh tối thiểu 2 ký tự'),
@@ -311,6 +311,19 @@ function App() {
     setSelectedSchoolId(school.id)
   }
 
+  const handleUpdateSchool = async (school: School, values: SchoolFormValues) => {
+    const updated = { ...school, ...values }
+    await db.schools.put(updated)
+    await queueSyncOperation('school', updated.id, 'update', updated)
+  }
+
+  const handleDeleteSchool = async (school: School) => {
+    if (!window.confirm(`Xóa trường "${school.name}" và dữ liệu liên quan?`)) return
+    await db.schools.delete(school.id)
+    await queueSyncOperation('school', school.id, 'delete', {})
+    if (selectedSchoolId === school.id) setSelectedSchoolId('')
+  }
+
   const handleAddStudent = async (values: StudentFormValues) => {
     const student = {
       id: crypto.randomUUID(),
@@ -326,6 +339,19 @@ function App() {
     await queueSyncOperation('student', student.id, 'create', student)
   }
 
+  const handleUpdateStudent = async (student: Student, values: StudentFormValues) => {
+    const updated = { ...student, ...values }
+    await db.students.put(updated)
+    await queueSyncOperation('student', updated.id, 'update', updated)
+  }
+
+  const handleDeleteStudents = async (studentIds: string[]) => {
+    if (studentIds.length === 0 || !window.confirm(`Xóa ${studentIds.length} học sinh đã chọn?`)) return
+    const selected = students.filter((student) => studentIds.includes(student.id))
+    await db.students.bulkDelete(studentIds)
+    await Promise.all(selected.map((student) => queueSyncOperation('student', student.id, 'delete', {})))
+  }
+
   const handleAddClass = async (values: ClassFormValues) => {
     const classRoom = {
       id: crypto.randomUUID(),
@@ -339,6 +365,19 @@ function App() {
 
     await db.classes.add(classRoom)
     await queueSyncOperation('class', classRoom.id, 'create', classRoom)
+  }
+
+  const handleUpdateClass = async (classRoom: ClassRoom, values: ClassFormValues) => {
+    const updated = { ...classRoom, ...values }
+    await db.classes.put(updated)
+    await queueSyncOperation('class', updated.id, 'update', updated)
+  }
+
+  const handleDeleteClass = async (classRoom: ClassRoom) => {
+    if (!window.confirm(`Xóa lớp "${classRoom.name}"? Dữ liệu lớp sẽ không còn trên máy này.`)) return
+    await db.classes.delete(classRoom.id)
+    await queueSyncOperation('class', classRoom.id, 'delete', {})
+    if (selectedClassId === classRoom.id) setSelectedClassId('')
   }
 
   const handleAddReward = async (values: RewardFormValues) => {
@@ -389,6 +428,17 @@ function App() {
     await queueSyncOperation('assessment', assessment.id, 'create', assessment)
   }
 
+  const handleUpdateAssessment = async (assessment: Assessment, values: AssessmentFormValues) => {
+    const updated = { ...assessment, ...values }
+    await db.assessments.put(updated)
+    await queueSyncOperation('assessment', updated.id, 'update', updated)
+  }
+
+  const handleDeleteAssessment = async (assessment: Assessment) => {
+    await db.assessments.delete(assessment.id)
+    await queueSyncOperation('assessment', assessment.id, 'delete', {})
+  }
+
   const handleMarkAttendance = async (studentId: string, status: AttendanceStatus) => {
     const record = {
       id: crypto.randomUUID(),
@@ -432,6 +482,40 @@ function App() {
     }
     await db.groups.add(group)
     await queueSyncOperation('group', group.id, 'create', { ...group })
+  }
+
+  const handleUpdateGroup = async (group: StudentGroup, name: string, studentIds: string[]) => {
+    const updated = { ...group, name, studentIds }
+    await db.groups.put(updated)
+    await queueSyncOperation('group', updated.id, 'update', updated)
+  }
+
+  const handleDeleteGroup = async (group: StudentGroup) => {
+    if (!window.confirm(`Xóa nhóm "${group.name}"?`)) return
+    await db.groups.delete(group.id)
+    await queueSyncOperation('group', group.id, 'delete', {})
+  }
+
+  const handleUpdateAssignment = async (assignment: Assignment, values: AssignmentFormValues) => {
+    const updated = { ...assignment, ...values }
+    await db.assignments.put(updated)
+    await queueSyncOperation('assignment', updated.id, 'update', updated)
+  }
+
+  const handleDeleteAssignment = async (assignment: Assignment) => {
+    await db.assignments.delete(assignment.id)
+    await queueSyncOperation('assignment', assignment.id, 'delete', {})
+  }
+
+  const handleUpdateReward = async (reward: Reward, values: Pick<Reward, 'title' | 'points' | 'type'>) => {
+    const updated = { ...reward, ...values }
+    await db.rewards.put(updated)
+    await queueSyncOperation('reward', updated.id, 'update', updated)
+  }
+
+  const handleDeleteReward = async (reward: Reward) => {
+    await db.rewards.delete(reward.id)
+    await queueSyncOperation('reward', reward.id, 'delete', {})
   }
 
   const handleSyncNow = async () => {
@@ -625,6 +709,8 @@ function App() {
                       selectedSchoolId={effectiveSchoolId}
                       onSelectSchool={setSelectedSchoolId}
                       onAddSchool={handleAddSchool}
+                      onUpdateSchool={handleUpdateSchool}
+                      onDeleteSchool={handleDeleteSchool}
                       selectedClassId={effectiveClassId}
                       onSelectClass={setSelectedClassId}
                     />
@@ -637,6 +723,8 @@ function App() {
                       classes={schoolClasses}
                       students={scopedStudents}
                       onAddStudent={handleAddStudent}
+                      onUpdateStudent={handleUpdateStudent}
+                      onDeleteStudents={handleDeleteStudents}
                     />
                   }
                 />
@@ -646,19 +734,19 @@ function App() {
                 />
                 <Route
                   path="/classes"
-                  element={<ClassesPage classes={schoolClasses} students={scopedStudents} groups={groups.filter((item) => item.classId === effectiveClassId)} onAddClass={handleAddClass} onCreateGroup={handleCreateGroup} />}
+                  element={<ClassesPage classes={schoolClasses} students={scopedStudents} groups={groups.filter((item) => item.classId === effectiveClassId)} onAddClass={handleAddClass} onUpdateClass={handleUpdateClass} onDeleteClass={handleDeleteClass} onCreateGroup={handleCreateGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} />}
                 />
                 <Route
                   path="/assignments"
-                  element={<AssignmentsPage assignments={scopedAssignments} onCreateAssignment={handleCreateAssignment} />}
+                  element={<AssignmentsPage assignments={scopedAssignments} onCreateAssignment={handleCreateAssignment} onUpdateAssignment={handleUpdateAssignment} onDeleteAssignment={handleDeleteAssignment} />}
                 />
                 <Route
                   path="/grading"
-                  element={<GradingPage students={scopedStudents} assessments={scopedAssessments} onCreateAssessment={handleCreateAssessment} />}
+                  element={<GradingPage students={scopedStudents} assessments={scopedAssessments} onCreateAssessment={handleCreateAssessment} onUpdateAssessment={handleUpdateAssessment} onDeleteAssessment={handleDeleteAssessment} />}
                 />
                 <Route
                   path="/rewards"
-                  element={<RewardsPage students={scopedStudents} rewards={scopedRewards} totalPoints={totalPoints} onAddReward={handleAddReward} groups={groups.filter((item) => item.classId === effectiveClassId)} />}
+                  element={<RewardsPage students={scopedStudents} rewards={scopedRewards} totalPoints={totalPoints} onAddReward={handleAddReward} onUpdateReward={handleUpdateReward} onDeleteReward={handleDeleteReward} groups={groups.filter((item) => item.classId === effectiveClassId)} />}
                 />
                 <Route
                   path="/reports"
@@ -796,6 +884,8 @@ function DashboardPage({
   selectedSchoolId,
   onSelectSchool,
   onAddSchool,
+  onUpdateSchool,
+  onDeleteSchool,
   selectedClassId,
   onSelectClass,
 }: {
@@ -808,10 +898,12 @@ function DashboardPage({
   syncQueue: Array<{ status: string }>
   isOnline: boolean
   onSyncNow: () => Promise<void>
-  schools: Array<{ id: string; name: string; address: string }>
+  schools: School[]
   selectedSchoolId: string
   onSelectSchool: (id: string) => void
   onAddSchool: (values: SchoolFormValues) => Promise<void>
+  onUpdateSchool: (school: School, values: SchoolFormValues) => Promise<void>
+  onDeleteSchool: (school: School) => Promise<void>
   selectedClassId: string
   onSelectClass: (id: string) => void
 }) {
@@ -860,6 +952,21 @@ function DashboardPage({
             {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
           </select>
           <p className="mt-2 text-xs text-slate-500">{schools.find((school) => school.id === selectedSchoolId)?.address}</p>
+          {schools.find((school) => school.id === selectedSchoolId) && (
+            <div className="mt-3 flex gap-2">
+              <button type="button" className="soft-secondary flex-1" onClick={() => {
+                const school = schools.find((item) => item.id === selectedSchoolId)
+                if (!school) return
+                const name = window.prompt('Tên trường', school.name)
+                const address = window.prompt('Địa chỉ', school.address)
+                if (name?.trim() && address?.trim()) void onUpdateSchool(school, { name: name.trim(), address: address.trim() })
+              }}>Sửa</button>
+              <button type="button" className="rounded-xl border border-rose-500/30 px-3 py-2 text-sm text-rose-200" onClick={() => {
+                const school = schools.find((item) => item.id === selectedSchoolId)
+                if (school) void onDeleteSchool(school)
+              }}>Xóa</button>
+            </div>
+          )}
         </div>
         <div className="panel p-4">
           <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-300"><BookMarked className="h-4 w-4 text-violet-300" />Lớp đang xem</label>
@@ -963,10 +1070,14 @@ function StudentsPage({
   classes,
   students,
   onAddStudent,
+  onUpdateStudent,
+  onDeleteStudents,
 }: {
   classes: Array<{ id: string; name: string }>
   students: Array<{ id: string; fullName: string; phone: string; status: string; note: string; classId: string }>
   onAddStudent: (values: StudentFormValues) => Promise<void>
+  onUpdateStudent: (student: Student, values: StudentFormValues) => Promise<void>
+  onDeleteStudents: (studentIds: string[]) => Promise<void>
 }) {
   const form = useForm<StudentFormValues>({
     resolver: zodResolver(studentSchema),
@@ -979,6 +1090,7 @@ function StudentsPage({
   })
   const [bulkText, setBulkText] = useState('')
   const [bulkPreview, setBulkPreview] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
     if (classes[0]?.id) {
@@ -1095,13 +1207,20 @@ function StudentsPage({
 
       <div className="panel overflow-hidden">
         <div className="border-b border-slate-800 p-6">
-          <h3 className="text-xl font-semibold text-white">Danh sách học sinh</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-xl font-semibold text-white">Danh sách học sinh</h3>
+            <div className="flex gap-2">
+              <button type="button" className="soft-secondary" onClick={() => setSelectedIds(students.map((student) => student.id))}>Chọn tất cả</button>
+              <button type="button" className="rounded-xl border border-rose-500/30 px-3 py-2 text-sm text-rose-200 disabled:opacity-40" disabled={!selectedIds.length} onClick={() => void onDeleteStudents(selectedIds)}>Xóa {selectedIds.length || ''}</button>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-slate-800 text-left text-sm">
             <thead className="bg-slate-950/70 text-slate-300">
               <tr>
+                <th className="px-6 py-3"><input type="checkbox" checked={students.length > 0 && selectedIds.length === students.length} onChange={(event) => setSelectedIds(event.target.checked ? students.map((student) => student.id) : [])} aria-label="Chọn tất cả học sinh" /></th>
                 <th className="px-6 py-3 font-medium">Học sinh</th>
                 <th className="px-6 py-3 font-medium">Điện thoại</th>
                 <th className="px-6 py-3 font-medium">Trạng thái</th>
@@ -1111,6 +1230,7 @@ function StudentsPage({
             <tbody>
               {students.map((student) => (
                 <tr key={student.id} className="border-b border-slate-800/80 bg-slate-900/30">
+                  <td className="px-6 py-4"><input type="checkbox" checked={selectedIds.includes(student.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id))} aria-label={`Chọn ${student.fullName}`} /></td>
                   <td className="px-6 py-4">
                     <div>
                       <p className="font-medium text-white">{student.fullName}</p>
@@ -1123,6 +1243,14 @@ function StudentsPage({
                     </span>
                   </td>
                   <td className="px-6 py-4 text-slate-400">{student.note || 'Chưa có ghi chú'}</td>
+                  <td className="px-6 py-4">
+                    <button type="button" className="text-cyan-300 hover:text-cyan-200" onClick={() => {
+                      const fullName = window.prompt('Họ và tên', student.fullName)
+                      const phone = window.prompt('Số điện thoại', student.phone)
+                      const note = window.prompt('Ghi chú', student.note)
+                      if (fullName?.trim() && phone !== null && note !== null) void onUpdateStudent(student as Student, { fullName: fullName.trim(), phone, note, classId: student.classId })
+                    }}>Sửa</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1227,13 +1355,21 @@ function ClassesPage({
   students,
   groups,
   onAddClass,
+  onUpdateClass,
+  onDeleteClass,
   onCreateGroup,
+  onUpdateGroup,
+  onDeleteGroup,
 }: {
   classes: Array<{ id: string; name: string; teacherName: string; room: string; status: string }>
   students: Array<{ id: string; fullName: string; status: string }>
   groups: StudentGroup[]
   onAddClass: (values: ClassFormValues) => Promise<void>
+  onUpdateClass: (classRoom: ClassRoom, values: ClassFormValues) => Promise<void>
+  onDeleteClass: (classRoom: ClassRoom) => Promise<void>
   onCreateGroup: (name: string, studentIds: string[]) => Promise<void>
+  onUpdateGroup: (group: StudentGroup, name: string, studentIds: string[]) => Promise<void>
+  onDeleteGroup: (group: StudentGroup) => Promise<void>
 }) {
   const form = useForm<ClassFormValues>({
     resolver: zodResolver(classSchema),
@@ -1298,6 +1434,7 @@ function ClassesPage({
                 <th className="px-6 py-3 font-medium">Giáo viên</th>
                 <th className="px-6 py-3 font-medium">Phòng</th>
                 <th className="px-6 py-3 font-medium">Trạng thái</th>
+                <th className="px-6 py-3 font-medium">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -1310,6 +1447,15 @@ function ClassesPage({
                     <span className={`rounded-full px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${statusTone(classItem.status)}`}>
                       {classItem.status}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <button type="button" className="mr-3 text-cyan-300" onClick={() => {
+                      const name = window.prompt('Tên lớp', classItem.name)
+                      const teacherName = window.prompt('Giáo viên', classItem.teacherName)
+                      const room = window.prompt('Phòng học', classItem.room)
+                      if (name?.trim() && teacherName?.trim() && room?.trim()) void onUpdateClass(classItem as ClassRoom, { name: name.trim(), teacherName: teacherName.trim(), room: room.trim() })
+                    }}>Sửa</button>
+                    <button type="button" className="text-rose-300" onClick={() => void onDeleteClass(classItem as ClassRoom)}>Xóa</button>
                   </td>
                 </tr>
               ))}
@@ -1331,7 +1477,20 @@ function ClassesPage({
         <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {students.map((student) => <label key={student.id} className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-200"><input type="checkbox" checked={groupStudentIds.includes(student.id)} onChange={(event) => setGroupStudentIds((current) => event.target.checked ? [...current, student.id] : current.filter((id) => id !== student.id))} />{student.fullName}</label>)}
         </div>
-        <div className="mt-5 flex flex-wrap gap-2">{groups.map((group) => <span key={group.id} className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">{group.name} · {group.studentIds.length} HS</span>)}</div>
+        <div className="mt-5 space-y-2">
+          {groups.map((group) => (
+            <div key={group.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm text-violet-200">
+              <span>{group.name} · {group.studentIds.length} HS</span>
+              <span>
+                <button type="button" className="mr-3 text-cyan-200" onClick={() => {
+                  const name = window.prompt('Tên nhóm', group.name)
+                  if (name?.trim()) void onUpdateGroup(group, name.trim(), group.studentIds)
+                }}>Sửa</button>
+                <button type="button" className="text-rose-200" onClick={() => void onDeleteGroup(group)}>Xóa</button>
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -1341,10 +1500,14 @@ function GradingPage({
   students,
   assessments,
   onCreateAssessment,
+  onUpdateAssessment,
+  onDeleteAssessment,
 }: {
   students: Array<{ id: string; fullName: string }>
   assessments: Array<{ id: string; studentId: string; title: string; score: number; date: string }>
   onCreateAssessment: (values: AssessmentFormValues) => Promise<void>
+  onUpdateAssessment: (assessment: Assessment, values: AssessmentFormValues) => Promise<void>
+  onDeleteAssessment: (assessment: Assessment) => Promise<void>
 }) {
   const [quickTitle, setQuickTitle] = useState('Đánh giá nhanh')
   const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10))
@@ -1428,6 +1591,7 @@ function GradingPage({
                 <th className="px-6 py-3 font-medium">Bài kiểm tra</th>
                 <th className="px-6 py-3 font-medium">Điểm</th>
                 <th className="px-6 py-3 font-medium">Ngày</th>
+                <th className="px-6 py-3 font-medium">Thao tác</th>
               </tr>
             </thead>
             <tbody>
@@ -1441,6 +1605,16 @@ function GradingPage({
                       <span className="rounded-full bg-emerald-500/10 px-2 py-1 font-medium text-emerald-300">{assessment.score.toFixed(1)}</span>
                     </td>
                     <td className="px-6 py-4 text-slate-400">{assessment.date}</td>
+                    <td className="px-6 py-4">
+                      <button type="button" className="mr-3 text-cyan-300" onClick={() => {
+                        const title = window.prompt('Tên bài đánh giá', assessment.title)
+                        const scoreText = window.prompt('Điểm số (0-10)', String(assessment.score))
+                        const date = window.prompt('Ngày đánh giá (YYYY-MM-DD)', assessment.date)
+                        const score = Number(scoreText)
+                        if (title?.trim() && date?.trim() && Number.isFinite(score) && score >= 0 && score <= 10) void onUpdateAssessment(assessment as Assessment, { studentId: assessment.studentId, title: title.trim(), score, date: date.trim() })
+                      }}>Sửa</button>
+                      <button type="button" className="text-rose-300" onClick={() => void onDeleteAssessment(assessment as Assessment)}>Xóa</button>
+                    </td>
                   </tr>
                 )
               })}
@@ -1481,12 +1655,16 @@ function RewardsPage({
   rewards,
   totalPoints,
   onAddReward,
+  onUpdateReward,
+  onDeleteReward,
   groups,
 }: {
   students: Array<{ id: string; fullName: string }>
-  rewards: Array<{ studentId: string; title: string; points: number; type: string }>
+  rewards: Array<{ id: string; studentId: string; title: string; points: number; type: string; createdAt?: string }>
   totalPoints: number
   onAddReward: (values: RewardFormValues) => Promise<void>
+  onUpdateReward: (reward: Reward, values: RewardFormValues) => Promise<void>
+  onDeleteReward: (reward: Reward) => Promise<void>
   groups: StudentGroup[]
 }) {
   const [activePresetTab, setActivePresetTab] = useState<RewardPresetKind>('positive')
@@ -1682,14 +1860,21 @@ function RewardsPage({
 
         <div className="mt-6 space-y-3">
           {rewards.map((reward) => (
-            <div key={reward.title + reward.points + reward.studentId} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-3">
+            <div key={reward.id} className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 p-3">
               <div>
                 <p className="font-medium text-white">{reward.title}</p>
                 <p className="text-sm text-slate-400">{reward.type}</p>
               </div>
-              <span className={`rounded-lg px-2 py-1 text-sm font-medium ${reward.points >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>
-                {formatRewardPoints(reward.points)}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className={`rounded-lg px-2 py-1 text-sm font-medium ${reward.points >= 0 ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'}`}>{formatRewardPoints(reward.points)}</span>
+                <button type="button" className="text-cyan-300" onClick={() => {
+                  const title = window.prompt('Tên phần thưởng', reward.title)
+                  const pointsText = window.prompt('Số điểm', String(reward.points))
+                  const points = Number(pointsText)
+                  if (title?.trim() && Number.isFinite(points)) void onUpdateReward(reward as Reward, { studentId: reward.studentId, groupId: '', title: title.trim(), type: reward.type as RewardFormValues['type'], points })
+                }}>Sửa</button>
+                <button type="button" className="text-rose-300" onClick={() => { if (window.confirm(`Xóa "${reward.title}"?`)) void onDeleteReward(reward as Reward) }}>Xóa</button>
+              </div>
             </div>
           ))}
         </div>
@@ -1784,9 +1969,13 @@ function RewardsPage({
 function AssignmentsPage({
   assignments,
   onCreateAssignment,
+  onUpdateAssignment,
+  onDeleteAssignment,
 }: {
   assignments: Array<{ id: string; title: string; description: string; dueDate: string; status: string }>
   onCreateAssignment: (values: AssignmentFormValues) => Promise<void>
+  onUpdateAssignment: (assignment: Assignment, values: AssignmentFormValues) => Promise<void>
+  onDeleteAssignment: (assignment: Assignment) => Promise<void>
 }) {
   const form = useForm<AssignmentFormValues>({
     resolver: zodResolver(assignmentSchema),
@@ -1813,6 +2002,16 @@ function AssignmentsPage({
               </div>
               <p className="mt-2 text-sm text-slate-400">{assignment.description}</p>
               <p className="mt-3 text-xs text-slate-500">Hạn nộp: {assignment.dueDate}</p>
+              <div className="mt-3">
+                <button type="button" className="mr-3 text-sm text-cyan-300" onClick={() => {
+                  const title = window.prompt('Tên bài tập', assignment.title)
+                  const description = window.prompt('Ghi chú', assignment.description)
+                  const dueDate = window.prompt('Ngày dự kiến (YYYY-MM-DD)', assignment.dueDate)
+                  const status = window.prompt('Trạng thái (todo/doing/done)', assignment.status)
+                  if (title?.trim() && description !== null && dueDate?.trim() && status?.trim()) void onUpdateAssignment(assignment as Assignment, { title: title.trim(), description, dueDate: dueDate.trim(), status: status as AssignmentFormValues['status'] })
+                }}>Sửa</button>
+                <button type="button" className="text-sm text-rose-300" onClick={() => { if (window.confirm(`Xóa ghi chú "${assignment.title}"?`)) void onDeleteAssignment(assignment as Assignment) }}>Xóa</button>
+              </div>
             </div>
           ))}
         </div>
