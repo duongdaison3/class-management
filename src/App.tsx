@@ -721,6 +721,7 @@ function App() {
                   element={
                     <StudentsPage
                       classes={schoolClasses}
+                      selectedClassId={effectiveClassId}
                       students={scopedStudents}
                       onAddStudent={handleAddStudent}
                       onUpdateStudent={handleUpdateStudent}
@@ -1068,12 +1069,14 @@ function DashboardPage({
 
 function StudentsPage({
   classes,
+  selectedClassId,
   students,
   onAddStudent,
   onUpdateStudent,
   onDeleteStudents,
 }: {
   classes: Array<{ id: string; name: string }>
+  selectedClassId: string
   students: Array<{ id: string; fullName: string; phone: string; status: string; note: string; classId: string }>
   onAddStudent: (values: StudentFormValues) => Promise<void>
   onUpdateStudent: (student: Student, values: StudentFormValues) => Promise<void>
@@ -1084,7 +1087,7 @@ function StudentsPage({
     defaultValues: {
       fullName: '',
       phone: '',
-      classId: classes[0]?.id ?? '',
+      classId: selectedClassId || classes[0]?.id || '',
       note: '',
     },
   })
@@ -1093,10 +1096,16 @@ function StudentsPage({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
-    if (classes[0]?.id) {
+    if (selectedClassId && classes.some((classItem) => classItem.id === selectedClassId)) {
+      form.setValue('classId', selectedClassId)
+      return
+    }
+
+    const currentClassId = form.getValues('classId')
+    if (!classes.some((classItem) => classItem.id === currentClassId) && classes[0]?.id) {
       form.setValue('classId', classes[0].id)
     }
-  }, [classes, form])
+  }, [classes, form, selectedClassId])
 
   const handleBulkPreview = () => {
     const nextNames = parseBulkStudentNames(bulkText)
@@ -1136,7 +1145,7 @@ function StudentsPage({
             form.reset({
               fullName: '',
               phone: '',
-              classId: classes[0]?.id ?? '',
+              classId: selectedClassId || classes[0]?.id || '',
               note: '',
             })
           })}
