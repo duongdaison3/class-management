@@ -1,4 +1,4 @@
-export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused'
+export type AttendanceStatus = 'present' | 'late' | 'absent' | 'excused' | 'arts' | 'health'
 export type RewardType = 'points' | 'badge' | 'certificate'
 export type SyncStatus = 'pending' | 'synced' | 'failed'
 
@@ -101,7 +101,9 @@ export interface AppSetting {
 
 export const attendanceLabels: Record<AttendanceStatus, string> = {
   present: 'Có mặt',
-  late: 'Muộn',
-  absent: 'Vắng',
-  excused: 'Phép',
+  late: 'Đi muộn',
+  absent: 'Vắng mặt',
+  excused: 'Nghỉ có phép',
+  arts: 'Văn nghệ',
+  health: 'Y tế',
 }

@@ -48,8 +48,10 @@ const classSchema = z.object({
 })
 
 const rewardSchema = z.object({
-  studentId: z.string().min(1, 'Vui lòng chọn học sinh'),
-  groupId: z.string(),
+  targetType: z.enum(['class', 'group', 'student', 'students']).default('student'),
+  studentId: z.string().min(1, 'Vui lòng chọn học sinh').optional(),
+  studentIds: z.array(z.string()).optional().default([]),
+  groupId: z.string().optional().default(''),
   title: z.string().min(2, 'Tên phần thưởng tối thiểu 2 ký tự'),
   type: z.enum(['points', 'badge', 'certificate']),
   points: z.number().min(-500, 'Điểm thưởng tối thiểu là -500').max(500, 'Điểm thưởng tối đa là 500'),
@@ -88,7 +90,9 @@ type ClassFormValues = {
 }
 
 type RewardFormValues = {
+  targetType: 'class' | 'group' | 'student' | 'students'
   studentId: string
+  studentIds: string[]
   groupId: string
   title: string
   type: 'points' | 'badge' | 'certificate'
@@ -171,6 +175,94 @@ const formatRewardPoints = (points: number) => {
   return `${points}`
 }
 
+type EditorField = {
+  name: string
+  label: string
+  type?: 'text' | 'number' | 'date' | 'textarea'
+  value: string
+  min?: number
+  max?: number
+  step?: string
+}
+
+function EditorSheet({
+  open,
+  title,
+  submitLabel,
+  fields,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean
+  title: string
+  submitLabel: string
+  fields: EditorField[]
+  onClose: () => void
+  onSubmit: (values: Record<string, string>) => Promise<void> | void
+}) {
+  const [values, setValues] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setValues(Object.fromEntries(fields.map((field) => [field.name, field.value])))
+  }, [fields, open])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
+      <div className="panel w-full max-w-2xl p-6">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-xl font-semibold text-white">{title}</h3>
+          <button type="button" onClick={onClose} className="soft-ghost rounded-xl px-3 py-2">Đóng</button>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          {fields.map((field) => (
+            <div key={field.name}>
+              <label className="mb-2 block text-sm text-slate-300">{field.label}</label>
+              {field.type === 'textarea' ? (
+                <textarea
+                  value={values[field.name] ?? ''}
+                  onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                  className="input-shell min-h-[110px]"
+                />
+              ) : (
+                <input
+                  type={field.type ?? 'text'}
+                  min={field.min}
+                  max={field.max}
+                  step={field.step}
+                  value={values[field.name] ?? ''}
+                  onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                  className="input-shell"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="soft-secondary">Hủy</button>
+          <button
+            type="button"
+            onClick={async () => {
+              await onSubmit(values)
+              onClose()
+            }}
+            className="soft-primary"
+          >
+            {submitLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine)
   const [session, setSession] = useState<Session | null>(null)
@@ -179,6 +271,7 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [selectedSchoolId, setSelectedSchoolId] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     if (!supabase) {
@@ -381,9 +474,27 @@ function App() {
   }
 
   const handleAddReward = async (values: RewardFormValues) => {
-    const group = groups.find((item) => item.id === values.groupId)
-    const studentIds = group?.studentIds ?? [values.studentId]
-    await Promise.all(studentIds.map(async (studentId) => {
+    const resolvedStudentIds = (() => {
+      if (values.targetType === 'group') {
+        return groups.find((item) => item.id === values.groupId)?.studentIds ?? []
+      }
+
+      if (values.targetType === 'class') {
+        return scopedStudents.map((student) => student.id)
+      }
+
+      if (values.targetType === 'students') {
+        return values.studentIds && values.studentIds.length > 0 ? values.studentIds : [values.studentId].filter(Boolean)
+      }
+
+      return [values.studentId].filter(Boolean)
+    })()
+
+    if (resolvedStudentIds.length === 0) {
+      return
+    }
+
+    await Promise.all(resolvedStudentIds.map(async (studentId) => {
       const reward = {
         id: crypto.randomUUID(),
         classId: activeClass?.id ?? '',
@@ -549,20 +660,31 @@ function App() {
     <BrowserRouter>
       <div className="app-shell min-h-screen bg-slate-950 text-slate-50">
         <div className="mx-auto flex max-w-[1600px]">
-          <aside className="glass-sidebar hidden w-72 shrink-0 md:flex md:flex-col">
-            <div className="border-b border-white/10 p-6">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 shadow-[0_18px_45px_rgba(14,165,233,0.35)]">
+          <aside className={`glass-sidebar hidden shrink-0 md:flex md:flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`}>
+            <div className="flex items-center justify-between border-b border-white/10 p-4">
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 shadow-[0_18px_45px_rgba(14,165,233,0.35)]">
                   <GraduationCap className="h-5 w-5" />
                 </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">Classroom</p>
-                  <h2 className="text-xl font-semibold text-white">Hub</h2>
-                </div>
+                {!isSidebarCollapsed && (
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">Classroom</p>
+                    <h2 className="text-xl font-semibold text-white">Hub</h2>
+                  </div>
+                )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => setIsSidebarCollapsed((current) => !current)}
+                className="soft-ghost h-9 w-9 rounded-xl p-0 text-slate-200"
+                aria-label={isSidebarCollapsed ? 'Mở rộng thanh menu' : 'Thu gọn thanh menu'}
+              >
+                {isSidebarCollapsed ? '→' : '←'}
+              </button>
             </div>
 
-            <nav className="flex flex-col gap-2 p-4">
+            <nav className="flex flex-col gap-2 p-3">
               {navItems.map(({ to, label, icon: Icon }) => (
                 <NavLink
                   key={to}
@@ -572,34 +694,48 @@ function App() {
                       isActive
                         ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-cyan-400/30'
                         : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                    }`
+                    } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`
                   }
+                  title={isSidebarCollapsed ? label : undefined}
                 >
-                  <Icon className="h-4 w-4" />
-                  {label}
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {!isSidebarCollapsed && <span>{label}</span>}
                 </NavLink>
               ))}
             </nav>
 
             <div className="mt-auto space-y-4 border-t border-white/10 p-4">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Trường</p>
-                <select
-                  value={effectiveSchoolId}
-                  onChange={(event) => setSelectedSchoolId(event.target.value)}
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/60 px-2.5 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-400"
-                  aria-label="Chọn trường"
-                >
-                  {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
-                </select>
+                {!isSidebarCollapsed ? (
+                  <>
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Trường</p>
+                    <select
+                      value={effectiveSchoolId}
+                      onChange={(event) => setSelectedSchoolId(event.target.value)}
+                      className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/60 px-2.5 py-2 text-sm font-semibold text-white outline-none focus:border-cyan-400"
+                      aria-label="Chọn trường"
+                    >
+                      {schools.map((school) => <option key={school.id} value={school.id}>{school.name}</option>)}
+                    </select>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarCollapsed(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-slate-950/60 text-slate-200"
+                    aria-label="Mở rộng trường"
+                  >
+                    <Building2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-                <div className="flex items-center justify-between text-sm text-slate-300">
-                  <span>Đăng nhập Supabase</span>
+                <div className="flex items-center justify-between gap-2 text-sm text-slate-300">
+                  {!isSidebarCollapsed && <span>Đăng nhập Supabase</span>}
                   <span className={`inline-flex items-center gap-1 ${supabase ? 'text-emerald-400' : 'text-amber-400'}`}>
                     {supabase ? <ShieldCheck className="h-3.5 w-3.5" /> : <CircleAlert className="h-3.5 w-3.5" />}
-                    {supabase ? 'Sẵn sàng' : 'Mẫu'}
+                    {!isSidebarCollapsed && (supabase ? 'Sẵn sàng' : 'Mẫu')}
                   </span>
                 </div>
               </div>
@@ -1518,9 +1654,37 @@ function GradingPage({
   onUpdateAssessment: (assessment: Assessment, values: AssessmentFormValues) => Promise<void>
   onDeleteAssessment: (assessment: Assessment) => Promise<void>
 }) {
-  const [quickTitle, setQuickTitle] = useState('Đánh giá nhanh')
-  const [quickDate, setQuickDate] = useState(new Date().toISOString().slice(0, 10))
-  const [quickScores, setQuickScores] = useState<Record<string, string>>({})
+  const [openCategory, setOpenCategory] = useState<string>('')
+  const gradebookRows = useMemo(() => {
+    const categoryLabels = [
+      'Điểm kiểm tra miệng',
+      'Điểm chấm vở',
+      'Điểm kiểm tra 15 phút',
+      'Điểm kiểm tra 45 phút',
+      'Điểm kiểm tra Giữa kỳ I',
+      'Điểm kiểm tra Cuối kỳ I',
+    ]
+
+    return students.map((student) => {
+      const studentAssessments = assessments.filter((assessment) => assessment.studentId === student.id)
+      const summary = categoryLabels.map((label) => {
+        const matching = studentAssessments.filter((assessment) => assessment.title.toLowerCase().includes(label.toLowerCase()) || assessment.title.toLowerCase().includes(label.toLowerCase().replace(/\s+/g, '')))
+        const values = matching.map((assessment) => assessment.score)
+        const average = values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+
+        return {
+          label,
+          values,
+          average,
+        }
+      })
+
+      return {
+        student,
+        summary,
+      }
+    })
+  }, [assessments, students])
   const form = useForm<AssessmentFormValues>({
     resolver: zodResolver(assessmentSchema),
     defaultValues: {
@@ -1634,25 +1798,53 @@ function GradingPage({
       <div className="panel p-6 xl:col-span-2">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h3 className="text-xl font-semibold text-white">Đánh giá nhanh cả lớp</h3>
-            <p className="mt-1 text-sm text-slate-400">Mỗi hàng là một học sinh, nhập điểm theo cùng một tiêu chí.</p>
+            <h3 className="text-xl font-semibold text-white">Bảng điểm theo danh sách học sinh</h3>
+            <p className="mt-1 text-sm text-slate-400">Mỗi cột là một tiêu chí điểm, có thể lưu nhiều lần cho cùng một mục.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <input value={quickTitle} onChange={(event) => setQuickTitle(event.target.value)} className="input-shell w-52" placeholder="Tiêu chí đánh giá" />
             <input type="date" value={quickDate} onChange={(event) => setQuickDate(event.target.value)} className="input-shell" />
-            <button type="button" onClick={() => void Promise.all(students.filter((student) => quickScores[student.id] !== undefined && quickScores[student.id] !== '').map((student) => onCreateAssessment({ studentId: student.id, title: quickTitle, score: Math.max(0, Math.min(10, Number(quickScores[student.id]))), date: quickDate })))} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400">Lưu cả lớp</button>
+            <button type="button" onClick={() => void Promise.all(students.filter((student) => quickScores[student.id] !== undefined && quickScores[student.id] !== '').map((student) => onCreateAssessment({ studentId: student.id, title: quickTitle || 'Đánh giá nhanh', score: Math.max(0, Math.min(10, Number(quickScores[student.id]))), date: quickDate })))} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400">Lưu cả lớp</button>
           </div>
         </div>
-        <div className="mt-5 overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-slate-400"><tr><th className="px-3 py-2">Học sinh</th><th className="px-3 py-2">{quickTitle}</th><th className="px-3 py-2">Trạng thái</th></tr></thead>
-            <tbody>
-              {students.map((student) => {
-                const value = quickScores[student.id] ?? ''
-                return <tr key={student.id} className="border-t border-slate-800"><td className="px-3 py-3 font-medium text-white">{student.fullName}</td><td className="px-3 py-3"><input type="number" min={0} max={10} step="0.1" value={value} onChange={(event) => setQuickScores((current) => ({ ...current, [student.id]: event.target.value }))} className="input-shell w-28" aria-label={`Điểm ${student.fullName}`} /></td><td className="px-3 py-3 text-slate-400">{value === '' ? 'Chưa nhập' : Number(value) >= 5 ? 'Đạt' : 'Cần hỗ trợ'}</td></tr>
-              })}
-            </tbody>
-          </table>
+
+        <div className="mt-5 space-y-4">
+          {gradebookRows.map(({ student, summary }) => (
+            <div key={student.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/45">
+              <button
+                type="button"
+                onClick={() => setOpenCategory((current) => (current === student.id ? '' : student.id))}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+              >
+                <span className="font-medium text-white">{student.fullName}</span>
+                <span className="text-xs text-slate-400">{summary.filter((item) => item.average !== null).length} mục có điểm</span>
+              </button>
+
+              {openCategory === student.id && (
+                <div className="border-t border-slate-800 p-3">
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {summary.map((item) => (
+                      <div key={item.label} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs uppercase tracking-[0.14em] text-slate-400">{item.label}</span>
+                          <span className="text-sm font-medium text-cyan-200">{item.average !== null ? item.average.toFixed(1) : '—'}</span>
+                        </div>
+                        {item.values.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {item.values.map((value, index) => (
+                              <span key={`${item.label}-${index}`} className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-200">{value.toFixed(1)}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-slate-500">Chưa có điểm</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1680,11 +1872,16 @@ function RewardsPage({
   const [rewardPresets, setRewardPresets] = useState<RewardPreset[]>(defaultRewardPresets)
   const [hasLoadedPresets, setHasLoadedPresets] = useState(false)
   const [newPreset, setNewPreset] = useState({ label: '', points: 1, kind: 'positive' as RewardPresetKind })
+  const [rewardTarget, setRewardTarget] = useState<'class' | 'group' | 'student' | 'students'>('student')
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([])
 
   const form = useForm<RewardFormValues>({
     resolver: zodResolver(rewardSchema),
     defaultValues: {
+      targetType: 'student',
       studentId: students[0]?.id ?? '',
+      studentIds: [],
       groupId: '',
       title: '',
       type: 'points',
@@ -1747,6 +1944,28 @@ function RewardsPage({
 
   const presetOptions = rewardPresets.filter((preset) => preset.kind === activePresetTab)
 
+  useEffect(() => {
+    form.setValue('targetType', rewardTarget)
+    if (rewardTarget === 'group') {
+      form.setValue('studentId', '')
+      form.setValue('studentIds', [])
+    }
+    if (rewardTarget === 'student') {
+      form.setValue('groupId', '')
+      form.setValue('studentIds', [])
+    }
+    if (rewardTarget === 'students') {
+      form.setValue('groupId', '')
+      form.setValue('studentId', '')
+      form.setValue('studentIds', selectedStudentIds)
+    }
+    if (rewardTarget === 'class') {
+      form.setValue('groupId', '')
+      form.setValue('studentId', '')
+      form.setValue('studentIds', [])
+    }
+  }, [form, rewardTarget, selectedStudentIds])
+
   return (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
       <div className="panel p-6">
@@ -1755,7 +1974,7 @@ function RewardsPage({
           <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm text-amber-300">{totalPoints} điểm</span>
         </div>
 
-        <div className="mt-5 rounder-xl border border-white/10 bg-slate-950/50 p-3">
+        <div className="mt-5 rounded-xl border border-white/10 bg-slate-950/50 p-3">
           <div className="flex gap-2">
             {(['positive', 'negative'] as const).map((kind) => (
               <button
