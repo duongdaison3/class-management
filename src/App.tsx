@@ -91,9 +91,9 @@ type ClassFormValues = {
 
 type RewardFormValues = {
   targetType: 'class' | 'group' | 'student' | 'students'
-  studentId: string
-  studentIds: string[]
-  groupId: string
+  studentId?: string
+  studentIds?: string[]
+  groupId?: string
   title: string
   type: 'points' | 'badge' | 'certificate'
   points: number
@@ -498,12 +498,12 @@ function App() {
       const reward = {
         id: crypto.randomUUID(),
         classId: activeClass?.id ?? '',
-        studentId,
-        type: values.type,
+        studentId: studentId as string,
+        type: values.type as RewardType,
         title: values.title,
         points: values.points,
         createdAt: new Date().toISOString(),
-      }
+      } as const
       await db.rewards.add(reward)
       await queueSyncOperation('reward', reward.id, 'create', reward)
     }))
@@ -1655,6 +1655,9 @@ function GradingPage({
   onDeleteAssessment: (assessment: Assessment) => Promise<void>
 }) {
   const [openCategory, setOpenCategory] = useState<string>('')
+  const [quickTitle, setQuickTitle] = useState<string>('')
+  const [quickDate, setQuickDate] = useState<string>(new Date().toISOString().slice(0, 10))
+  const [quickScores, setQuickScores] = useState<Record<string, string>>({})
   const gradebookRows = useMemo(() => {
     const categoryLabels = [
       'Điểm kiểm tra miệng',
@@ -1809,6 +1812,28 @@ function GradingPage({
         </div>
 
         <div className="mt-5 space-y-4">
+          {/* Quick score entry section */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
+            <h4 className="text-sm font-medium text-slate-300 mb-3">Nhập điểm nhanh cho tiêu chí: {quickTitle || '(chưa chọn)'}</h4>
+            <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {students.map((student) => (
+                <div key={student.id} className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/50 p-2">
+                  <span className="text-sm text-slate-200 min-w-[120px] truncate">{student.fullName}</span>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={10}
+                    value={quickScores[student.id] || ''}
+                    onChange={(e) => setQuickScores((prev) => ({ ...prev, [student.id]: e.target.value }))}
+                    className="input-shell w-20 text-center"
+                    placeholder="0-10"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
           {gradebookRows.map(({ student, summary }) => (
             <div key={student.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/45">
               <button
@@ -1872,9 +1897,6 @@ function RewardsPage({
   const [rewardPresets, setRewardPresets] = useState<RewardPreset[]>(defaultRewardPresets)
   const [hasLoadedPresets, setHasLoadedPresets] = useState(false)
   const [newPreset, setNewPreset] = useState({ label: '', points: 1, kind: 'positive' as RewardPresetKind })
-  const [rewardTarget, setRewardTarget] = useState<'class' | 'group' | 'student' | 'students'>('student')
-  const [selectedGroupId, setSelectedGroupId] = useState('')
-  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([])
 
   const form = useForm<RewardFormValues>({
     resolver: zodResolver(rewardSchema),
@@ -1943,28 +1965,6 @@ function RewardsPage({
   }, [hasLoadedPresets, rewardPresets])
 
   const presetOptions = rewardPresets.filter((preset) => preset.kind === activePresetTab)
-
-  useEffect(() => {
-    form.setValue('targetType', rewardTarget)
-    if (rewardTarget === 'group') {
-      form.setValue('studentId', '')
-      form.setValue('studentIds', [])
-    }
-    if (rewardTarget === 'student') {
-      form.setValue('groupId', '')
-      form.setValue('studentIds', [])
-    }
-    if (rewardTarget === 'students') {
-      form.setValue('groupId', '')
-      form.setValue('studentId', '')
-      form.setValue('studentIds', selectedStudentIds)
-    }
-    if (rewardTarget === 'class') {
-      form.setValue('groupId', '')
-      form.setValue('studentId', '')
-      form.setValue('studentIds', [])
-    }
-  }, [form, rewardTarget, selectedStudentIds])
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
