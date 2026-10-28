@@ -27,7 +27,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ensureDemoData } from './data/seed'
 import { db, hydrateFromSupabase, queueSyncOperation, syncPendingQueue } from './lib/db'
 import { supabase } from './lib/supabase'
-import { attendanceLabels, type Assignment, type Assessment, type AttendanceStatus, type ClassRoom, type Reward, type RewardType, type School, type Student, type StudentGroup } from './types'
+import { attendanceLabels, type Assignment, type Assessment, type AttendanceStatus, type ClassRoom, type Reward, type School, type Student, type StudentGroup } from './types'
 
 const studentSchema = z.object({
   fullName: z.string().min(2, 'Tên học sinh tối thiểu 2 ký tự'),
