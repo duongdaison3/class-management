@@ -27,7 +27,7 @@ import type { Session } from '@supabase/supabase-js'
 import { ensureDemoData } from './data/seed'
 import { db, hydrateFromSupabase, queueSyncOperation, syncPendingQueue } from './lib/db'
 import { supabase } from './lib/supabase'
-import { attendanceLabels, type Assignment, type Assessment, type AttendanceStatus, type ClassRoom, type Reward, type School, type Student, type StudentGroup } from './types'
+import { attendanceLabels, type Assignment, type Assessment, type AttendanceStatus, type ClassRoom, type Reward, type RewardType, type School, type Student, type StudentGroup } from './types'
 
 const studentSchema = z.object({
   fullName: z.string().min(2, 'Tên học sinh tối thiểu 2 ký tự'),
@@ -48,10 +48,10 @@ const classSchema = z.object({
 })
 
 const rewardSchema = z.object({
-  targetType: z.enum(['class', 'group', 'student', 'students']).default('student'),
-  studentId: z.string().min(1, 'Vui lòng chọn học sinh').optional(),
-  studentIds: z.array(z.string()).optional().default([]),
-  groupId: z.string().optional().default(''),
+  targetType: z.enum(['class', 'group', 'student', 'students']),
+  studentId: z.string().optional(),
+  studentIds: z.array(z.string()).optional(),
+  groupId: z.string().optional(),
   title: z.string().min(2, 'Tên phần thưởng tối thiểu 2 ký tự'),
   type: z.enum(['points', 'badge', 'certificate']),
   points: z.number().min(-500, 'Điểm thưởng tối thiểu là -500').max(500, 'Điểm thưởng tối đa là 500'),
@@ -139,7 +139,7 @@ const parseBulkStudentNames = (rawText: string) => {
     .map((value) => {
       const normalized = value
         .replace(/\s+/g, ' ')
-        .replace(/^[-•*\d\.)\]]+\s*/, '')
+        .replace(/^[-•*\d.)\]]+\s*/, '')
         .trim()
       return normalized
     })
@@ -175,93 +175,6 @@ const formatRewardPoints = (points: number) => {
   return `${points}`
 }
 
-type EditorField = {
-  name: string
-  label: string
-  type?: 'text' | 'number' | 'date' | 'textarea'
-  value: string
-  min?: number
-  max?: number
-  step?: string
-}
-
-function EditorSheet({
-  open,
-  title,
-  submitLabel,
-  fields,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean
-  title: string
-  submitLabel: string
-  fields: EditorField[]
-  onClose: () => void
-  onSubmit: (values: Record<string, string>) => Promise<void> | void
-}) {
-  const [values, setValues] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (!open) {
-      return
-    }
-
-    setValues(Object.fromEntries(fields.map((field) => [field.name, field.value])))
-  }, [fields, open])
-
-  if (!open) return null
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
-      <div className="panel w-full max-w-2xl p-6">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-xl font-semibold text-white">{title}</h3>
-          <button type="button" onClick={onClose} className="soft-ghost rounded-xl px-3 py-2">Đóng</button>
-        </div>
-
-        <div className="mt-5 space-y-4">
-          {fields.map((field) => (
-            <div key={field.name}>
-              <label className="mb-2 block text-sm text-slate-300">{field.label}</label>
-              {field.type === 'textarea' ? (
-                <textarea
-                  value={values[field.name] ?? ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-                  className="input-shell min-h-[110px]"
-                />
-              ) : (
-                <input
-                  type={field.type ?? 'text'}
-                  min={field.min}
-                  max={field.max}
-                  step={field.step}
-                  value={values[field.name] ?? ''}
-                  onChange={(event) => setValues((current) => ({ ...current, [field.name]: event.target.value }))}
-                  className="input-shell"
-                />
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" onClick={onClose} className="soft-secondary">Hủy</button>
-          <button
-            type="button"
-            onClick={async () => {
-              await onSubmit(values)
-              onClose()
-            }}
-            className="soft-primary"
-          >
-            {submitLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine)
@@ -499,7 +412,7 @@ function App() {
         id: crypto.randomUUID(),
         classId: activeClass?.id ?? '',
         studentId: studentId as string,
-        type: values.type as RewardType,
+        type: values.type,
         title: values.title,
         points: values.points,
         createdAt: new Date().toISOString(),
@@ -2099,7 +2012,7 @@ function RewardsPage({
                   const title = window.prompt('Tên phần thưởng', reward.title)
                   const pointsText = window.prompt('Số điểm', String(reward.points))
                   const points = Number(pointsText)
-                  if (title?.trim() && Number.isFinite(points)) void onUpdateReward(reward as Reward, { studentId: reward.studentId, groupId: '', title: title.trim(), type: reward.type as RewardFormValues['type'], points })
+                  if (title?.trim() && Number.isFinite(points)) void onUpdateReward(reward as Reward, { targetType: 'student', studentId: reward.studentId, groupId: '', title: title.trim(), type: reward.type as RewardFormValues['type'], points })
                 }}>Sửa</button>
                 <button type="button" className="text-rose-300" onClick={() => { if (window.confirm(`Xóa "${reward.title}"?`)) void onDeleteReward(reward as Reward) }}>Xóa</button>
               </div>
@@ -2116,7 +2029,9 @@ function RewardsPage({
             onSubmit={form.handleSubmit(async (values) => {
               await onAddReward(values)
               form.reset({
+                targetType: 'student',
                 studentId: students[0]?.id ?? '',
+                studentIds: [],
                 groupId: '',
                 title: '',
                 type: 'points',
