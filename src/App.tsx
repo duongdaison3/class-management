@@ -18,7 +18,19 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Menu,
+  X,
 } from 'lucide-react'
+import {
+  EditSchoolModal,
+  EditClassModal,
+  EditStudentModal,
+  EditGroupModal,
+  EditAssignmentModal,
+} from './components/EditModals'
+import { StudentGradebook } from './components/StudentGradebook'
+import { ClassDojoRewards } from './components/ClassDojoRewards'
+import { EnhancedAttendance } from './components/EnhancedAttendance'
 import { useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
@@ -185,6 +197,7 @@ function App() {
   const [selectedSchoolId, setSelectedSchoolId] = useState('')
   const [selectedClassId, setSelectedClassId] = useState('')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!supabase) {
@@ -572,6 +585,71 @@ function App() {
   return (
     <BrowserRouter>
       <div className="app-shell min-h-screen bg-slate-950 text-slate-50">
+        {/* Mobile Navigation Drawer */}
+        {isMobileMenuOpen && (
+          <div className="fixed inset-0 z-50 md:hidden">
+            <div
+              className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity"
+              onClick={() => setIsMobileMenuOpen(false)}
+            />
+            <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col liquid-glass bg-slate-950/95 border-r border-white/15 p-4 shadow-2xl overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 shadow-md">
+                    <GraduationCap className="h-5 w-5 text-slate-950" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.28em] text-slate-400">Classroom</p>
+                    <h2 className="text-lg font-bold text-white">Hub</h2>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <nav className="mt-4 flex flex-col gap-1.5">
+                {navItems.map(({ to, label, icon: Icon }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 rounded-2xl px-3.5 py-3 text-sm font-semibold transition ${isActive
+                        ? 'bg-gradient-to-r from-cyan-500/20 to-violet-500/20 text-cyan-200 border border-cyan-400/30 shadow-sm'
+                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span>{label}</span>
+                  </NavLink>
+                ))}
+              </nav>
+
+              <div className="mt-auto space-y-3 border-t border-white/10 pt-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">Trường đang chọn</p>
+                  <select
+                    value={effectiveSchoolId}
+                    onChange={(event) => setSelectedSchoolId(event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-white/10 bg-slate-950/80 px-2.5 py-2 text-xs font-semibold text-white outline-none"
+                  >
+                    {schools.map((school) => (
+                      <option key={school.id} value={school.id}>
+                        {school.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </aside>
+          </div>
+        )}
         <div className="mx-auto flex max-w-[1600px]">
           <aside className={`glass-sidebar hidden shrink-0 md:flex md:flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`}>
             <div className="flex items-center justify-between border-b border-white/10 p-4">
@@ -603,10 +681,9 @@ function App() {
                   key={to}
                   to={to}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all ${
-                      isActive
-                        ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-cyan-400/30'
-                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                    `flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm font-medium transition-all ${isActive
+                      ? 'bg-white/10 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ring-1 ring-cyan-400/30'
+                      : 'text-slate-300 hover:bg-white/5 hover:text-white'
                     } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`
                   }
                   title={isSidebarCollapsed ? label : undefined}
@@ -658,18 +735,27 @@ function App() {
           <div className="flex-1">
             <header className="glass-header sticky top-0 z-20">
               <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-8">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.26em] text-slate-400">Hệ thống quản lý lớp học</p>
-                  <h1 className="mt-1 text-2xl font-semibold text-white">{schoolName}</h1>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileMenuOpen(true)}
+                    className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 md:hidden hover:bg-white/10 transition"
+                    aria-label="Mở menu điều hướng"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </button>
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.26em] text-slate-400">Hệ thống quản lý lớp học</p>
+                    <h1 className="mt-1 text-xl sm:text-2xl font-semibold text-white truncate max-w-[200px] sm:max-w-none">{schoolName}</h1>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <div
-                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${
-                      isOnline
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${isOnline
                         ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
                         : 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-                    }`}
+                      }`}
                   >
                     {isOnline ? <Wifi className="h-3.5 w-3.5" /> : <WifiOff className="h-3.5 w-3.5" />}
                     {isOnline ? 'Online' : 'Offline'}
@@ -706,11 +792,10 @@ function App() {
                             key={classItem.id}
                             type="button"
                             onClick={() => setSelectedClassId(classItem.id)}
-                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                              effectiveClassId === classItem.id
+                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${effectiveClassId === classItem.id
                                 ? 'border-cyan-400/50 bg-cyan-500/10 text-cyan-200 shadow-[0_0_0_1px_rgba(34,211,238,0.18)]'
                                 : 'border-slate-700 bg-slate-900/50 text-slate-300 hover:border-slate-500 hover:text-white'
-                            }`}
+                              }`}
                             aria-label={`Chuyển sang lớp ${classItem.name}`}
                           >
                             {classItem.name}
@@ -778,10 +863,7 @@ function App() {
                     />
                   }
                 />
-                <Route
-                  path="/attendance"
-                  element={<AttendancePage students={scopedStudents} attendance={scopedAttendance} onMarkAttendance={handleMarkAttendance} onBulkAttendance={handleBulkAttendance} />}
-                />
+                <Route path="/attendance" element={<EnhancedAttendance students={scopedStudents} attendance={scopedAttendance} onMarkAttendance={handleMarkAttendance} onBulkAttendance={handleBulkAttendance} />} />
                 <Route
                   path="/classes"
                   element={<ClassesPage classes={schoolClasses} students={scopedStudents} groups={groups.filter((item) => item.classId === effectiveClassId)} onAddClass={handleAddClass} onUpdateClass={handleUpdateClass} onDeleteClass={handleDeleteClass} onCreateGroup={handleCreateGroup} onUpdateGroup={handleUpdateGroup} onDeleteGroup={handleDeleteGroup} />}
@@ -790,13 +872,10 @@ function App() {
                   path="/assignments"
                   element={<AssignmentsPage assignments={scopedAssignments} onCreateAssignment={handleCreateAssignment} onUpdateAssignment={handleUpdateAssignment} onDeleteAssignment={handleDeleteAssignment} />}
                 />
-                <Route
-                  path="/grading"
-                  element={<GradingPage students={scopedStudents} assessments={scopedAssessments} onCreateAssessment={handleCreateAssessment} onUpdateAssessment={handleUpdateAssessment} onDeleteAssessment={handleDeleteAssessment} />}
-                />
+                <Route path="/grading" element={<StudentGradebook students={scopedStudents} assessments={scopedAssessments} onCreateAssessment={handleCreateAssessment} onUpdateAssessment={handleUpdateAssessment} onDeleteAssessment={handleDeleteAssessment} />} />
                 <Route
                   path="/rewards"
-                  element={<RewardsPage students={scopedStudents} rewards={scopedRewards} totalPoints={totalPoints} onAddReward={handleAddReward} onUpdateReward={handleUpdateReward} onDeleteReward={handleDeleteReward} groups={groups.filter((item) => item.classId === effectiveClassId)} />}
+                  element={<ClassDojoRewards students={scopedStudents} rewards={scopedRewards} totalPoints={totalPoints} onAddReward={handleAddReward} onUpdateReward={handleUpdateReward} onDeleteReward={handleDeleteReward} groups={groups.filter((item) => item.classId === effectiveClassId)} />}
                 />
                 <Route
                   path="/reports"
@@ -971,6 +1050,8 @@ function DashboardPage({
   const syncedCount = syncQueue.filter((item) => item.status === 'synced').length
   const syncStatusText = isOnline ? 'Đã kết nối • Đồng bộ tự động' : 'Chờ mạng • sẽ đồng bộ khi có internet'
 
+  const [editingSchool, setEditingSchool] = useState<School | null>(null)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -1006,10 +1087,7 @@ function DashboardPage({
             <div className="mt-3 flex gap-2">
               <button type="button" className="soft-secondary flex-1" onClick={() => {
                 const school = schools.find((item) => item.id === selectedSchoolId)
-                if (!school) return
-                const name = window.prompt('Tên trường', school.name)
-                const address = window.prompt('Địa chỉ', school.address)
-                if (name?.trim() && address?.trim()) void onUpdateSchool(school, { name: name.trim(), address: address.trim() })
+                if (school) setEditingSchool(school)
               }}>Sửa</button>
               <button type="button" className="rounded-xl border border-rose-500/30 px-3 py-2 text-sm text-rose-200" onClick={() => {
                 const school = schools.find((item) => item.id === selectedSchoolId)
@@ -1112,6 +1190,7 @@ function DashboardPage({
           </div>
         </div>
       </div>
+      <EditSchoolModal school={editingSchool} isOpen={Boolean(editingSchool)} onClose={() => setEditingSchool(null)} onSave={onUpdateSchool} />
     </div>
   )
 }
@@ -1142,6 +1221,7 @@ function StudentsPage({
   })
   const [bulkText, setBulkText] = useState('')
   const [bulkPreview, setBulkPreview] = useState<string[]>([])
+  const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   useEffect(() => {
@@ -1302,12 +1382,7 @@ function StudentsPage({
                   </td>
                   <td className="px-6 py-4 text-slate-400">{student.note || 'Chưa có ghi chú'}</td>
                   <td className="px-6 py-4">
-                    <button type="button" className="text-cyan-300 hover:text-cyan-200" onClick={() => {
-                      const fullName = window.prompt('Họ và tên', student.fullName)
-                      const phone = window.prompt('Số điện thoại', student.phone)
-                      const note = window.prompt('Ghi chú', student.note)
-                      if (fullName?.trim() && phone !== null && note !== null) void onUpdateStudent(student as Student, { fullName: fullName.trim(), phone, note, classId: student.classId })
-                    }}>Sửa</button>
+                    <button type="button" className="text-cyan-300 hover:text-cyan-200" onClick={() => setEditingStudent(student as Student)}>Sửa</button>
                   </td>
                 </tr>
               ))}
@@ -1315,11 +1390,12 @@ function StudentsPage({
           </table>
         </div>
       </div>
+      <EditStudentModal student={editingStudent} isOpen={Boolean(editingStudent)} onClose={() => setEditingStudent(null)} onSave={onUpdateStudent} />
     </div>
   )
 }
 
-function AttendancePage({
+export function AttendancePage({
   students,
   attendance,
   onMarkAttendance,
@@ -1439,6 +1515,8 @@ function ClassesPage({
   })
   const [groupName, setGroupName] = useState('')
   const [groupStudentIds, setGroupStudentIds] = useState<string[]>([])
+  const [editingClass, setEditingClass] = useState<ClassRoom | null>(null)
+  const [editingGroup, setEditingGroup] = useState<StudentGroup | null>(null)
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
@@ -1507,12 +1585,7 @@ function ClassesPage({
                     </span>
                   </td>
                   <td className="px-6 py-4">
-                    <button type="button" className="mr-3 text-cyan-300" onClick={() => {
-                      const name = window.prompt('Tên lớp', classItem.name)
-                      const teacherName = window.prompt('Giáo viên', classItem.teacherName)
-                      const room = window.prompt('Phòng học', classItem.room)
-                      if (name?.trim() && teacherName?.trim() && room?.trim()) void onUpdateClass(classItem as ClassRoom, { name: name.trim(), teacherName: teacherName.trim(), room: room.trim() })
-                    }}>Sửa</button>
+                    <button type="button" className="mr-3 text-cyan-300" onClick={() => setEditingClass(classItem as ClassRoom)}>Sửa</button>
                     <button type="button" className="text-rose-300" onClick={() => void onDeleteClass(classItem as ClassRoom)}>Xóa</button>
                   </td>
                 </tr>
@@ -1540,21 +1613,20 @@ function ClassesPage({
             <div key={group.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-sm text-violet-200">
               <span>{group.name} · {group.studentIds.length} HS</span>
               <span>
-                <button type="button" className="mr-3 text-cyan-200" onClick={() => {
-                  const name = window.prompt('Tên nhóm', group.name)
-                  if (name?.trim()) void onUpdateGroup(group, name.trim(), group.studentIds)
-                }}>Sửa</button>
+                <button type="button" className="mr-3 text-cyan-200" onClick={() => setEditingGroup(group)}>Sửa</button>
                 <button type="button" className="text-rose-200" onClick={() => void onDeleteGroup(group)}>Xóa</button>
               </span>
             </div>
           ))}
         </div>
       </div>
+      <EditClassModal classItem={editingClass} isOpen={Boolean(editingClass)} onClose={() => setEditingClass(null)} onSave={onUpdateClass} />
+      <EditGroupModal group={editingGroup} students={students} isOpen={Boolean(editingGroup)} onClose={() => setEditingGroup(null)} onSave={onUpdateGroup} />
     </div>
   )
 }
 
-function GradingPage({
+export function GradingPage({
   students,
   assessments,
   onCreateAssessment,
@@ -1789,7 +1861,7 @@ function GradingPage({
   )
 }
 
-function RewardsPage({
+export function RewardsPage({
   students,
   rewards,
   totalPoints,
@@ -1894,11 +1966,10 @@ function RewardsPage({
                 key={kind}
                 type="button"
                 onClick={() => setActivePresetTab(kind)}
-                className={`flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                  activePresetTab === kind
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm font-medium transition ${activePresetTab === kind
                     ? 'border-violet-400 bg-violet-500/15 text-violet-200'
                     : 'border-slate-700 bg-slate-900/50 text-slate-300'
-                }`}
+                  }`}
               >
                 {kind === 'positive' ? 'Tích cực' : 'Cần cố gắng'}
               </button>
@@ -2120,6 +2191,7 @@ function AssignmentsPage({
   onUpdateAssignment: (assignment: Assignment, values: AssignmentFormValues) => Promise<void>
   onDeleteAssignment: (assignment: Assignment) => Promise<void>
 }) {
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null)
   const form = useForm<AssignmentFormValues>({
     resolver: zodResolver(assignmentSchema),
     defaultValues: {
@@ -2146,13 +2218,7 @@ function AssignmentsPage({
               <p className="mt-2 text-sm text-slate-400">{assignment.description}</p>
               <p className="mt-3 text-xs text-slate-500">Hạn nộp: {assignment.dueDate}</p>
               <div className="mt-3">
-                <button type="button" className="mr-3 text-sm text-cyan-300" onClick={() => {
-                  const title = window.prompt('Tên bài tập', assignment.title)
-                  const description = window.prompt('Ghi chú', assignment.description)
-                  const dueDate = window.prompt('Ngày dự kiến (YYYY-MM-DD)', assignment.dueDate)
-                  const status = window.prompt('Trạng thái (todo/doing/done)', assignment.status)
-                  if (title?.trim() && description !== null && dueDate?.trim() && status?.trim()) void onUpdateAssignment(assignment as Assignment, { title: title.trim(), description, dueDate: dueDate.trim(), status: status as AssignmentFormValues['status'] })
-                }}>Sửa</button>
+                <button type="button" className="mr-3 text-sm text-cyan-300" onClick={() => setEditingAssignment(assignment as Assignment)}>Sửa</button>
                 <button type="button" className="text-sm text-rose-300" onClick={() => { if (window.confirm(`Xóa ghi chú "${assignment.title}"?`)) void onDeleteAssignment(assignment as Assignment) }}>Xóa</button>
               </div>
             </div>
@@ -2208,6 +2274,7 @@ function AssignmentsPage({
           </button>
         </form>
       </div>
+      <EditAssignmentModal assignment={editingAssignment} isOpen={Boolean(editingAssignment)} onClose={() => setEditingAssignment(null)} onSave={onUpdateAssignment} />
     </div>
   )
 }

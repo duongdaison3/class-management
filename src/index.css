@@ -46,41 +46,67 @@ textarea {
 @layer components {
   .app-shell {
     background:
-      radial-gradient(circle at top left, rgba(34, 211, 238, 0.12), transparent 18%),
-      radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.14), transparent 22%),
-      linear-gradient(180deg, rgba(2, 6, 23, 0.92), rgba(15, 23, 42, 0.92));
+      radial-gradient(circle at 15% 10%, rgba(34, 211, 238, 0.15), transparent 28%),
+      radial-gradient(circle at 85% 15%, rgba(168, 85, 247, 0.18), transparent 32%),
+      radial-gradient(circle at 50% 80%, rgba(59, 130, 246, 0.12), transparent 36%),
+      linear-gradient(180deg, #030712 0%, #070d1e 35%, #0b1329 100%);
   }
 
   .glass-sidebar {
-    @apply border-r border-white/10 bg-slate-950/35 backdrop-blur-2xl shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)];
+    @apply border-r border-white/10 bg-slate-950/40 backdrop-blur-2xl shadow-[inset_-1px_0_0_rgba(255,255,255,0.06)];
   }
 
   .glass-header {
-    @apply border-b border-white/10 bg-slate-950/35 backdrop-blur-2xl shadow-[0_12px_30px_rgba(2,6,23,0.2)];
+    @apply border-b border-white/10 bg-slate-950/45 backdrop-blur-2xl shadow-[0_12px_32px_rgba(0,0,0,0.35)];
   }
 
   .panel {
-    @apply rounded-[28px] border border-white/10 bg-slate-900/60 shadow-[0_24px_60px_rgba(15,23,42,0.45)] backdrop-blur-xl;
+    @apply rounded-[28px] border border-white/10 bg-slate-900/50 shadow-[0_20px_50px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-all duration-200;
+  }
+
+  .liquid-glass {
+    @apply rounded-3xl border border-white/15 bg-gradient-to-b from-white/[0.08] to-white/[0.02] shadow-[0_24px_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.18)] backdrop-blur-2xl;
+  }
+
+  .liquid-card {
+    @apply rounded-2xl border border-white/10 bg-slate-900/40 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.3),inset_0_1px_0_rgba(255,255,255,0.07)] backdrop-blur-lg transition-all duration-200 hover:border-cyan-400/40 hover:bg-slate-800/50 hover:shadow-[0_14px_40px_rgba(34,211,238,0.12)];
   }
 
   .soft-primary {
-    @apply inline-flex items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_18px_30px_rgba(34,211,238,0.28)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-500 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-[0_14px_30px_rgba(34,211,238,0.28)] transition hover:brightness-110 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .soft-secondary {
-    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-cyan-400/40 hover:bg-white/10;
+    @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-cyan-400/50 hover:bg-white/[0.12] active:scale-[0.98];
   }
 
   .soft-ghost {
-    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-white/20 hover:bg-slate-900/70;
+    @apply inline-flex items-center justify-center rounded-2xl border border-white/10 bg-slate-950/50 px-3 py-2 text-sm font-medium text-slate-200 transition hover:border-white/20 hover:bg-slate-900/80 active:scale-[0.98];
   }
 
   .chip-pill {
-    @apply inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-300;
+    @apply inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.07] px-2.5 py-1.5 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-300 backdrop-blur-md;
   }
 
   .input-shell {
-    @apply w-full rounded-2xl border border-white/10 bg-slate-950/60 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/15;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    @apply w-full rounded-2xl border border-white/10 bg-slate-950/70 px-3.5 py-2.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   }
+}
+
+/* Custom sleek scrollbar for horizontal table scrolls */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.5);
 }
