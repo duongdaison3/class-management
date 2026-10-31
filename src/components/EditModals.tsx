@@ -436,6 +436,7 @@ export function EditAssessmentModal({ assessment, students, isOpen, onClose, onS
     'Điểm kiểm tra miệng',
     'Điểm chấm vở',
     'Điểm kiểm tra 15 phút',
+    'Điểm kiểm tra thực hành',
     'Điểm kiểm tra 45 phút',
     'Điểm kiểm tra Giữa kỳ I',
     'Điểm kiểm tra Cuối kỳ 1',

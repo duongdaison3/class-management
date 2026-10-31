@@ -5,6 +5,10 @@ import {
   Search,
   Filter,
   Calculator,
+  Users,
+  CheckSquare,
+  Square,
+  Zap,
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { EditAssessmentModal } from './EditModals'
@@ -14,6 +18,7 @@ export const STANDARD_CATEGORIES = [
   { id: 'oral', label: 'Điểm kiểm tra miệng', short: 'Miệng', weight: 1, tone: 'from-amber-400 to-orange-500' },
   { id: 'notebook', label: 'Điểm chấm vở', short: 'Chấm vở', weight: 1, tone: 'from-sky-400 to-blue-500' },
   { id: '15min', label: 'Điểm kiểm tra 15 phút', short: '15 phút', weight: 1, tone: 'from-cyan-400 to-teal-500' },
+  { id: 'practice', label: 'Điểm kiểm tra thực hành', short: 'Thực hành', weight: 1, tone: 'from-emerald-400 to-teal-500' },
   { id: '45min', label: 'Điểm kiểm tra 45 phút', short: '45 phút', weight: 2, tone: 'from-violet-400 to-indigo-500' },
   { id: 'midterm', label: 'Điểm kiểm tra Giữa kỳ I', short: 'Giữa kỳ I', weight: 2, tone: 'from-purple-400 to-fuchsia-500' },
   { id: 'final', label: 'Điểm kiểm tra Cuối kỳ 1', short: 'Cuối kỳ 1', weight: 3, tone: 'from-rose-400 to-pink-500' },
@@ -23,6 +28,7 @@ const getCategoryForAssessment = (title: string) => {
   const t = title.toLowerCase()
   if (t.includes('miệng') || t.includes('oral')) return 'oral'
   if (t.includes('vở') || t.includes('notebook')) return 'notebook'
+  if (t.includes('thực hành') || t.includes('thuc hanh') || t.includes('practice')) return 'practice'
   if (t.includes('15') || t.includes('mười lăm')) return '15min'
   if (t.includes('45') || t.includes('bốn lăm') || t.includes('1 tiết')) return '45min'
   if (t.includes('giữa kỳ') || t.includes('giua ky')) return 'midterm'
@@ -59,11 +65,12 @@ export function StudentGradebook({
   onUpdateAssessment,
   onDeleteAssessment,
 }: StudentGradebookProps) {
-  // Enabled category columns (by default show all categories)
+  // Enabled category columns (by default show all categories including practice)
   const [activeCategoryIds, setActiveCategoryIds] = useState<string[]>([
     'oral',
     'notebook',
     '15min',
+    'practice',
     '45min',
     'midterm',
     'final',
@@ -81,11 +88,21 @@ export function StudentGradebook({
     date: new Date().toISOString().slice(0, 10),
   })
 
+  // 1 score for multiple students modal (NEW)
+  const [isMultiScoreModalOpen, setIsMultiScoreModalOpen] = useState(false)
+  const [multiScoreCategory, setMultiScoreCategory] = useState('Điểm kiểm tra thực hành')
+  const [multiScoreDate, setMultiScoreDate] = useState(new Date().toISOString().slice(0, 10))
+  const [multiScoreValue, setMultiScoreValue] = useState<number>(8.5)
+  const [selectedStudentIdsForMulti, setSelectedStudentIdsForMulti] = useState<string[]>([])
+  const [multiStudentSearch, setMultiStudentSearch] = useState('')
+  const [isSubmittingMulti, setIsSubmittingMulti] = useState(false)
+
   // Batch grade entry for whole class for a test column
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
   const [batchCategory, setBatchCategory] = useState('Điểm kiểm tra 15 phút')
   const [batchDate, setBatchDate] = useState(new Date().toISOString().slice(0, 10))
   const [batchScores, setBatchScores] = useState<Record<string, string>>({})
+  const [batchQuickScore, setBatchQuickScore] = useState<string>('')
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
 
   // Filter students
@@ -94,6 +111,13 @@ export function StudentGradebook({
     const q = searchQuery.toLowerCase()
     return students.filter((s) => s.fullName.toLowerCase().includes(q))
   }, [students, searchQuery])
+
+  // Filter students for multi-score modal
+  const multiFilteredStudents = useMemo(() => {
+    if (!multiStudentSearch.trim()) return students
+    const q = multiStudentSearch.toLowerCase()
+    return students.filter((s) => s.fullName.toLowerCase().includes(q))
+  }, [students, multiStudentSearch])
 
   // Group assessments by student and category
   // For each category, find maximum number of attempts across all students to build dynamic sub-columns!
@@ -128,6 +152,7 @@ export function StudentGradebook({
         oral: [],
         notebook: [],
         '15min': [],
+        practice: [],
         '45min': [],
         midterm: [],
         final: [],
@@ -220,11 +245,50 @@ export function StudentGradebook({
     setIsAddScoreOpen(false)
   }
 
+  // Open multi-student single score modal
+  const handleOpenMultiScoreModal = (categoryTitle?: string) => {
+    setMultiScoreCategory(categoryTitle || 'Điểm kiểm tra thực hành')
+    setMultiScoreDate(new Date().toISOString().slice(0, 10))
+    setMultiScoreValue(8.5)
+    setSelectedStudentIdsForMulti(students.map((s) => s.id))
+    setMultiStudentSearch('')
+    setIsMultiScoreModalOpen(true)
+  }
+
+  const toggleStudentForMulti = (studentId: string) => {
+    setSelectedStudentIdsForMulti((prev) =>
+      prev.includes(studentId) ? prev.filter((id) => id !== studentId) : [...prev, studentId],
+    )
+  }
+
+  const handleSaveMultiScore = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (selectedStudentIdsForMulti.length === 0) return
+    setIsSubmittingMulti(true)
+    try {
+      const score = Math.max(0, Math.min(10, Number(multiScoreValue)))
+      await Promise.all(
+        selectedStudentIdsForMulti.map((sId) =>
+          onCreateAssessment({
+            studentId: sId,
+            title: multiScoreCategory,
+            score,
+            date: multiScoreDate,
+          }),
+        ),
+      )
+      setIsMultiScoreModalOpen(false)
+    } finally {
+      setIsSubmittingMulti(false)
+    }
+  }
+
   // Batch grade submit
   const handleOpenBatchModal = (catLabel: string) => {
     setBatchCategory(catLabel)
     setBatchDate(new Date().toISOString().slice(0, 10))
     setBatchScores({})
+    setBatchQuickScore('')
     setIsBatchModalOpen(true)
   }
 
@@ -271,18 +335,27 @@ export function StudentGradebook({
               Bảng Điểm Học Sinh Chi Tiết
             </h2>
             <p className="mt-1 text-xs text-slate-400">
-              Chọn các cột điểm để mở rộng. Điểm trung bình (ĐTB) tự động tính theo hệ số chuẩn (Miệng/Vở/15p: hs 1, 45p/Giữa kỳ: hs 2, Cuối kỳ: hs 3).
+              Chọn các cột điểm để mở rộng. Điểm trung bình (ĐTB) tự động tính theo hệ số chuẩn (Miệng/Vở/15p/Thực hành: hs 1, 45p/Giữa kỳ: hs 2, Cuối kỳ: hs 3).
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* New: 1 score for multiple students */}
+            <button
+              type="button"
+              onClick={() => handleOpenMultiScoreModal('Điểm kiểm tra thực hành')}
+              className="soft-primary px-4 py-2.5 shadow-[0_8px_20px_rgba(34,211,238,0.25)]"
+            >
+              <Users className="h-4 w-4" />
+              <span>Nhập 1 điểm cho nhiều học sinh</span>
+            </button>
             <button
               type="button"
               onClick={() => handleOpenAddScore()}
-              className="soft-primary"
+              className="soft-secondary"
             >
               <Plus className="h-4 w-4" />
-              <span>Ghi điểm học sinh</span>
+              <span>Ghi điểm 1 học sinh</span>
             </button>
             <button
               type="button"
@@ -386,9 +459,17 @@ export function StudentGradebook({
                           <span className="text-[10px] text-cyan-300 font-mono">(x{cat.weight})</span>
                           <button
                             type="button"
+                            onClick={() => handleOpenMultiScoreModal(cat.label)}
+                            title={`Nhập 1 điểm cho nhiều học sinh mục ${cat.label}`}
+                            className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/20"
+                          >
+                            <Users className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenBatchModal(cat.label)}
                             title={`Nhập điểm cả lớp cho ${cat.label}`}
-                            className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/20"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-lg border border-white/15 bg-white/10 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-500/20"
                           >
                             <Plus className="h-3 w-3" />
                           </button>
@@ -548,7 +629,7 @@ export function StudentGradebook({
         </div>
       </div>
 
-      {/* Modal 1: Add Single Score */}
+      {/* Modal 1: Add Single Score for 1 Student */}
       <Modal
         isOpen={isAddScoreOpen}
         onClose={() => setIsAddScoreOpen(false)}
@@ -640,7 +721,189 @@ export function StudentGradebook({
         </form>
       </Modal>
 
-      {/* Modal 2: Batch Grade Entry for Whole Class */}
+      {/* Modal 2: 1 Score for Multiple Students (NEW) */}
+      <Modal
+        isOpen={isMultiScoreModalOpen}
+        onClose={() => setIsMultiScoreModalOpen(false)}
+        title="Nhập 1 điểm cho nhiều học sinh"
+        subtitle="Áp dụng cùng một mức điểm cho nhóm học sinh hoặc toàn bộ lớp"
+        maxWidth="max-w-2xl"
+      >
+        <form onSubmit={handleSaveMultiScore} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-300">
+                Cột điểm / Tiêu chí *
+              </label>
+              <select
+                value={multiScoreCategory}
+                onChange={(e) => setMultiScoreCategory(e.target.value)}
+                className="input-shell"
+              >
+                {STANDARD_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.label}>
+                    {c.label} (Hệ số {c.weight})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium uppercase tracking-wider text-slate-300">
+                Ngày đánh giá *
+              </label>
+              <input
+                type="date"
+                required
+                value={multiScoreDate}
+                onChange={(e) => setMultiScoreDate(e.target.value)}
+                className="input-shell"
+              />
+            </div>
+          </div>
+
+          {/* Score input with quick presets */}
+          <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-200">
+                  Mức điểm áp dụng chung (0 - 10) *
+                </label>
+                <p className="text-[11px] text-slate-400">
+                  Tất cả các học sinh được chọn bên dưới sẽ cùng nhận mức điểm này.
+                </p>
+              </div>
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={10}
+                required
+                value={multiScoreValue}
+                onChange={(e) => setMultiScoreValue(Number(e.target.value))}
+                className="input-shell w-28 text-center text-xl font-extrabold text-cyan-300"
+              />
+            </div>
+
+            {/* Quick score buttons */}
+            <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-white/5 pt-3">
+              <span className="text-[11px] text-slate-400 mr-1">Chọn nhanh:</span>
+              {[10, 9.5, 9.0, 8.5, 8.0, 7.5, 7.0, 6.5, 6.0, 5.0].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => setMultiScoreValue(val)}
+                  className={`rounded-lg px-2 py-1 text-xs font-bold transition ${
+                    multiScoreValue === val
+                      ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                      : 'border border-white/10 bg-white/5 text-slate-300 hover:border-cyan-400/40 hover:text-white'
+                  }`}
+                >
+                  {val.toFixed(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Student selection panel */}
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Users className="h-3.5 w-3.5 text-cyan-400" />
+                Chọn học sinh nhận điểm ({selectedStudentIdsForMulti.length} / {students.length} đã chọn)
+              </label>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentIdsForMulti(students.map((s) => s.id))}
+                  className="soft-ghost text-xs py-1 px-2.5"
+                >
+                  <CheckSquare className="h-3 w-3 mr-1" />
+                  Chọn tất cả
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentIdsForMulti([])}
+                  className="soft-ghost text-xs py-1 px-2.5"
+                >
+                  <Square className="h-3 w-3 mr-1" />
+                  Bỏ chọn
+                </button>
+              </div>
+            </div>
+
+            {/* Search filter for students */}
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Tìm nhanh học sinh theo tên..."
+                value={multiStudentSearch}
+                onChange={(e) => setMultiStudentSearch(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-slate-950/70 py-1.5 pl-8 pr-3 text-xs text-white outline-none placeholder:text-slate-500 focus:border-cyan-400"
+              />
+            </div>
+
+            {/* Student checkboxes grid */}
+            <div className="max-h-[240px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-3 space-y-1.5">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {multiFilteredStudents.map((s) => {
+                  const isChecked = selectedStudentIdsForMulti.includes(s.id)
+                  return (
+                    <label
+                      key={s.id}
+                      onClick={() => toggleStudentForMulti(s.id)}
+                      className={`flex items-center gap-2.5 rounded-xl border p-2 text-xs cursor-pointer select-none transition ${
+                        isChecked
+                          ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100 shadow-sm'
+                          : 'border-white/5 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {}} // handled on parent label click
+                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-400 focus:ring-cyan-400"
+                      />
+                      <span className="font-semibold truncate">{s.fullName}</span>
+                    </label>
+                  )
+                })}
+              </div>
+
+              {multiFilteredStudents.length === 0 && (
+                <p className="py-4 text-center text-xs text-slate-500">
+                  Không tìm thấy học sinh nào phù hợp.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-white/10">
+            <span className="text-xs text-slate-400">
+              Sẽ ghi <strong>{multiScoreValue.toFixed(1)}</strong> điểm cho <strong>{selectedStudentIdsForMulti.length}</strong> học sinh
+            </span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsMultiScoreModalOpen(false)}
+                className="soft-secondary"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingMulti || selectedStudentIdsForMulti.length === 0}
+                className="soft-primary disabled:opacity-40"
+              >
+                {isSubmittingMulti ? 'Đang lưu...' : `Lưu điểm (${selectedStudentIdsForMulti.length} HS)`}
+              </button>
+            </div>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal 3: Batch Grade Entry for Whole Class */}
       <Modal
         isOpen={isBatchModalOpen}
         onClose={() => setIsBatchModalOpen(false)}
@@ -679,7 +942,42 @@ export function StudentGradebook({
             </div>
           </div>
 
-          <div className="max-h-[360px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+          {/* Quick bulk fill for all inputs */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+            <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
+              <Zap className="h-3.5 w-3.5 text-amber-300" />
+              Gán nhanh cùng 1 mức điểm cho tất cả học sinh:
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step="0.1"
+                min={0}
+                max={10}
+                placeholder="0-10"
+                value={batchQuickScore}
+                onChange={(e) => setBatchQuickScore(e.target.value)}
+                className="w-20 rounded-xl border border-white/15 bg-slate-900 px-2.5 py-1 text-center text-xs font-bold text-cyan-300 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (batchQuickScore !== '') {
+                    const next: Record<string, string> = {}
+                    for (const s of students) {
+                      next[s.id] = batchQuickScore
+                    }
+                    setBatchScores(next)
+                  }
+                }}
+                className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 transition"
+              >
+                Áp dụng cả lớp
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-[340px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-4">
             <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3">
               {students.map((student) => (
                 <div
@@ -721,7 +1019,7 @@ export function StudentGradebook({
         </form>
       </Modal>
 
-      {/* Modal 3: Edit Existing Assessment Modal */}
+      {/* Modal 4: Edit Existing Assessment Modal */}
       <EditAssessmentModal
         assessment={editingAssessment}
         students={students}
