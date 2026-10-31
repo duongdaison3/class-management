@@ -41,7 +41,7 @@ create table if not exists attendance (
   class_id uuid references classes(id) on delete cascade,
   student_id uuid references students(id) on delete cascade,
   date date not null,
-  status text not null check (status in ('present', 'late', 'absent', 'excused')),
+  status text not null check (status in ('present', 'late', 'absent', 'excused', 'arts', 'health')),
   note text not null default '',
   created_at timestamptz not null default now()
 );

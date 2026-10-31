@@ -476,31 +476,54 @@ function App() {
     await queueSyncOperation('assessment', assessment.id, 'delete', {})
   }
 
-  const handleMarkAttendance = async (studentId: string, status: AttendanceStatus) => {
-    const record = {
-      id: crypto.randomUUID(),
-      classId: effectiveClassId,
-      studentId,
-      date: new Date().toISOString().slice(0, 10),
-      status,
-      note: `Đánh dấu ${attendanceLabels[status].toLowerCase()}`,
-      createdAt: new Date().toISOString(),
+  const handleMarkAttendance = async (studentId: string, status: AttendanceStatus, date?: string) => {
+    const targetDate = date || new Date().toISOString().slice(0, 10)
+    const existingList = await db.attendance
+      .filter((item) => item.studentId === studentId && item.classId === effectiveClassId && item.date === targetDate)
+      .toArray()
+    const existing = existingList[0]
+
+    if (existingList.length > 1) {
+      const extraIds = existingList.slice(1).map((r) => r.id)
+      await db.attendance.bulkDelete(extraIds)
+      for (const extraId of extraIds) {
+        await queueSyncOperation('attendance', extraId, 'delete', {})
+      }
     }
 
-    await db.attendance.add(record)
-    await queueSyncOperation('attendance', record.id, 'create', record)
+    const record = {
+      id: existing?.id ?? crypto.randomUUID(),
+      classId: effectiveClassId,
+      studentId,
+      date: targetDate,
+      status,
+      note: `Đánh dấu ${attendanceLabels[status]?.toLowerCase() ?? status}`,
+      createdAt: existing?.createdAt ?? new Date().toISOString(),
+    }
+
+    if (existing) {
+      await db.attendance.put(record)
+    } else {
+      await db.attendance.add(record)
+    }
+    await queueSyncOperation('attendance', record.id, existing ? 'update' : 'create', record)
   }
 
   const handleBulkAttendance = async (studentIds: string[], status: AttendanceStatus, date: string) => {
+    const existingRecords = await db.attendance
+      .filter((item) => item.classId === effectiveClassId && item.date === date && studentIds.includes(item.studentId))
+      .toArray()
+    const existingMap = new Map(existingRecords.map((r) => [r.studentId, r]))
+
     await Promise.all(studentIds.map(async (studentId) => {
-      const existing = attendance.find((item) => item.studentId === studentId && item.date === date && item.classId === effectiveClassId)
+      const existing = existingMap.get(studentId)
       const record = {
         id: existing?.id ?? crypto.randomUUID(),
         classId: effectiveClassId,
         studentId,
         date,
         status,
-        note: `Đánh dấu ${attendanceLabels[status].toLowerCase()}`,
+        note: `Đánh dấu ${attendanceLabels[status]?.toLowerCase() ?? status}`,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       }
       if (existing) await db.attendance.put(record)
@@ -872,7 +895,7 @@ function App() {
                   path="/assignments"
                   element={<AssignmentsPage assignments={scopedAssignments} onCreateAssignment={handleCreateAssignment} onUpdateAssignment={handleUpdateAssignment} onDeleteAssignment={handleDeleteAssignment} />}
                 />
-                <Route path="/grading" element={<StudentGradebook students={scopedStudents} assessments={scopedAssessments} onCreateAssessment={handleCreateAssessment} onUpdateAssessment={handleUpdateAssessment} onDeleteAssessment={handleDeleteAssessment} />} />
+                <Route path="/grading" element={<StudentGradebook students={scopedStudents} assessments={scopedAssessments} attendance={scopedAttendance} onCreateAssessment={handleCreateAssessment} onUpdateAssessment={handleUpdateAssessment} onDeleteAssessment={handleDeleteAssessment} />} />
                 <Route
                   path="/rewards"
                   element={<ClassDojoRewards students={scopedStudents} rewards={scopedRewards} totalPoints={totalPoints} onAddReward={handleAddReward} onUpdateReward={handleUpdateReward} onDeleteReward={handleDeleteReward} groups={groups.filter((item) => item.classId === effectiveClassId)} />}
@@ -1403,7 +1426,7 @@ export function AttendancePage({
 }: {
   students: Array<{ id: string; fullName: string }>
   attendance: Array<{ studentId: string; status: string; date: string }>
-  onMarkAttendance: (studentId: string, status: AttendanceStatus) => Promise<void>
+  onMarkAttendance: (studentId: string, status: AttendanceStatus, date?: string) => Promise<void>
   onBulkAttendance: (studentIds: string[], status: AttendanceStatus, date: string) => Promise<void>
 }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
@@ -1466,7 +1489,7 @@ export function AttendancePage({
                             key={status}
                             type="button"
                             className="rounded-md border border-slate-700 px-2.5 py-1.5 text-[11px] font-medium text-slate-200 hover:border-cyan-400 hover:text-cyan-200"
-                            onClick={() => void onMarkAttendance(student.id, status)}
+                            onClick={() => void onMarkAttendance(student.id, status, date)}
                           >
                             {attendanceLabels[status]}
                           </button>

@@ -107,7 +107,7 @@ export const queueSyncOperation = async (
       return
     }
 
-    if (existingPending.operationType === 'create') {
+    if (existingPending.operationType === 'create' || existingPending.operationType === 'update') {
       await db.syncQueue.update(existingPending.id, {
         payload,
         status: 'pending',
@@ -244,7 +244,7 @@ export const syncPendingQueue = async () => {
       })
 
       const table = entityTables[item.entityType]
-      const remotePayload = {
+      const remotePayload: Record<string, unknown> = {
         id: item.entityId,
         ...toRemotePayload(item.entityType, item.payload),
       }
@@ -256,7 +256,25 @@ export const syncPendingQueue = async () => {
           continue
         }
       } else {
-        const { error: entityError } = await supabase.from(table).upsert(remotePayload, { onConflict: 'id' })
+        let { error: entityError } = await supabase.from(table).upsert(remotePayload, { onConflict: 'id' })
+        if (
+          entityError &&
+          item.entityType === 'attendance' &&
+          entityError.message.includes('attendance_status_check')
+        ) {
+          const currentStatus = String(remotePayload.status ?? '')
+          if (currentStatus === 'arts' || currentStatus === 'health') {
+            const prefix = currentStatus === 'arts' ? '[Văn nghệ]' : '[Y tế]'
+            const originalNote = String(remotePayload.note ?? '').replace(/^\[(Văn nghệ|Y tế)\]\s*/, '')
+            const fallbackPayload = {
+              ...remotePayload,
+              status: 'excused',
+              note: `${prefix} ${originalNote}`.trim(),
+            }
+            const fallbackResult = await supabase.from(table).upsert(fallbackPayload, { onConflict: 'id' })
+            entityError = fallbackResult.error
+          }
+        }
         if (entityError) {
           await setSyncItemFailed(item.id, entityError.message)
           continue
@@ -309,9 +327,21 @@ const fromRemotePayload = (payload: Record<string, unknown>) => {
     created_at: 'createdAt',
   }
 
-  return Object.fromEntries(
+  const result: Record<string, unknown> = Object.fromEntries(
     Object.entries(payload).map(([key, value]) => [fieldMap[key] ?? key, value]),
   )
+
+  if (result.status === 'excused' && typeof result.note === 'string') {
+    if (result.note.startsWith('[Văn nghệ]')) {
+      result.status = 'arts'
+      result.note = result.note.replace(/^\[Văn nghệ\]\s*/, '')
+    } else if (result.note.startsWith('[Y tế]')) {
+      result.status = 'health'
+      result.note = result.note.replace(/^\[Y tế\]\s*/, '')
+    }
+  }
+
+  return result
 }
 
 export const hydrateFromSupabase = async () => {

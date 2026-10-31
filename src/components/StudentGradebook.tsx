@@ -9,10 +9,13 @@ import {
   CheckSquare,
   Square,
   Zap,
+  AlertTriangle,
+  AlertCircle,
+  UserCheck,
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { EditAssessmentModal } from './EditModals'
-import type { Assessment, Student } from '../types'
+import type { Assessment, Student, AttendanceRecord, AttendanceStatus } from '../types'
 
 export const STANDARD_CATEGORIES = [
   { id: 'oral', label: 'Điểm kiểm tra miệng', short: 'Miệng', weight: 1, tone: 'from-amber-400 to-orange-500' },
@@ -53,6 +56,7 @@ const getRankLabel = (avg: number) => {
 interface StudentGradebookProps {
   students: Student[]
   assessments: Assessment[]
+  attendance?: AttendanceRecord[]
   onCreateAssessment: (values: { studentId: string; title: string; score: number; date: string }) => Promise<void>
   onUpdateAssessment: (assessment: Assessment, values: { studentId: string; title: string; score: number; date: string }) => Promise<void>
   onDeleteAssessment: (assessment: Assessment) => Promise<void>
@@ -61,6 +65,7 @@ interface StudentGradebookProps {
 export function StudentGradebook({
   students,
   assessments,
+  attendance = [],
   onCreateAssessment,
   onUpdateAssessment,
   onDeleteAssessment,
@@ -105,6 +110,16 @@ export function StudentGradebook({
   const [batchQuickScore, setBatchQuickScore] = useState<string>('')
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false)
 
+  // Confirmation warning dialog state
+  const [warningDialog, setWarningDialog] = useState<{
+    isOpen: boolean
+    title: string
+    warnings: string[]
+    type: 'danger' | 'warning'
+    confirmText: string
+    onConfirm: () => Promise<void>
+  } | null>(null)
+
   // Filter students
   const filteredStudents = useMemo(() => {
     if (!searchQuery.trim()) return students
@@ -118,6 +133,32 @@ export function StudentGradebook({
     const q = multiStudentSearch.toLowerCase()
     return students.filter((s) => s.fullName.toLowerCase().includes(q))
   }, [students, multiStudentSearch])
+
+  // Helper map of attendance by student for multiScoreDate
+  const multiDateAttendanceMap = useMemo(() => {
+    const map = new Map<string, AttendanceStatus>()
+    for (const r of attendance) {
+      if (r.date === multiScoreDate) {
+        map.set(r.studentId, r.status)
+      }
+    }
+    return map
+  }, [attendance, multiScoreDate])
+
+  const multiDateHasAttendance = multiDateAttendanceMap.size > 0
+
+  // Helper map of attendance by student for batchDate
+  const batchDateAttendanceMap = useMemo(() => {
+    const map = new Map<string, AttendanceStatus>()
+    for (const r of attendance) {
+      if (r.date === batchDate) {
+        map.set(r.studentId, r.status)
+      }
+    }
+    return map
+  }, [attendance, batchDate])
+
+  const batchDateHasAttendance = batchDateAttendanceMap.size > 0
 
   // Group assessments by student and category
   // For each category, find maximum number of attempts across all students to build dynamic sub-columns!
@@ -245,14 +286,35 @@ export function StudentGradebook({
     setIsAddScoreOpen(false)
   }
 
+  // Auto-pick present students when date changes in Multi-Score Modal
+  const autoSelectPresentStudentsForDate = (dateStr: string) => {
+    const records = (attendance || []).filter((r) => r.date === dateStr)
+    if (records.length > 0) {
+      // Pick present or late students
+      const presentIds = records
+        .filter((r) => r.status === 'present' || r.status === 'late')
+        .map((r) => r.studentId)
+      setSelectedStudentIdsForMulti(presentIds)
+    } else {
+      // If no attendance records for date, default to all students
+      setSelectedStudentIdsForMulti(students.map((s) => s.id))
+    }
+  }
+
   // Open multi-student single score modal
   const handleOpenMultiScoreModal = (categoryTitle?: string) => {
+    const today = new Date().toISOString().slice(0, 10)
     setMultiScoreCategory(categoryTitle || 'Điểm kiểm tra thực hành')
-    setMultiScoreDate(new Date().toISOString().slice(0, 10))
+    setMultiScoreDate(today)
     setMultiScoreValue(8.5)
-    setSelectedStudentIdsForMulti(students.map((s) => s.id))
     setMultiStudentSearch('')
+    autoSelectPresentStudentsForDate(today)
     setIsMultiScoreModalOpen(true)
+  }
+
+  const handleDateChangeForMulti = (newDate: string) => {
+    setMultiScoreDate(newDate)
+    autoSelectPresentStudentsForDate(newDate)
   }
 
   const toggleStudentForMulti = (studentId: string) => {
@@ -261,61 +323,264 @@ export function StudentGradebook({
     )
   }
 
+  // Handle Multi Score Submit with Warnings
   const handleSaveMultiScore = async (e: React.FormEvent) => {
     e.preventDefault()
     if (selectedStudentIdsForMulti.length === 0) return
-    setIsSubmittingMulti(true)
-    try {
-      const score = Math.max(0, Math.min(10, Number(multiScoreValue)))
-      await Promise.all(
-        selectedStudentIdsForMulti.map((sId) =>
-          onCreateAssessment({
-            studentId: sId,
-            title: multiScoreCategory,
-            score,
-            date: multiScoreDate,
-          }),
-        ),
+
+    const dateRecords = (attendance || []).filter((r) => r.date === multiScoreDate)
+    const hasAttendance = dateRecords.length > 0
+    const presentIds = new Set(
+      dateRecords
+        .filter((r) => r.status === 'present' || r.status === 'late')
+        .map((r) => r.studentId),
+    )
+
+    // Check absent students who are currently selected
+    const absentSelected = hasAttendance
+      ? selectedStudentIdsForMulti.filter((id) => !presentIds.has(id))
+      : []
+
+    // Check existing scores on that date for that category
+    const existingAssessments = assessments.filter(
+      (a) =>
+        a.date === multiScoreDate &&
+        a.title === multiScoreCategory &&
+        selectedStudentIdsForMulti.includes(a.studentId),
+    )
+
+    const warnings: string[] = []
+
+    if (!hasAttendance) {
+      warnings.push(
+        `Ngày ${multiScoreDate} CHƯA CÓ dữ liệu điểm danh chuyên cần! Hệ thống không thể xác minh học sinh nào có mặt trong lớp hôm đó.`,
       )
-      setIsMultiScoreModalOpen(false)
-    } finally {
-      setIsSubmittingMulti(false)
     }
+
+    if (absentSelected.length > 0) {
+      const absentNames = students
+        .filter((s) => absentSelected.includes(s.id))
+        .map((s) => s.fullName)
+        .slice(0, 5)
+        .join(', ')
+      warnings.push(
+        `Có ${absentSelected.length} học sinh không có mặt (vắng mặt hoặc nghỉ phép) vào ngày ${multiScoreDate} nhưng vẫn đang được chọn để cho điểm (${absentNames}${absentSelected.length > 5 ? '...' : ''}).`,
+      )
+    }
+
+    if (existingAssessments.length > 0) {
+      warnings.push(
+        `Đã có ${existingAssessments.length} học sinh có điểm "${multiScoreCategory}" vào ngày ${multiScoreDate}. Thao tác này sẽ ghi đè / tạo thêm bản ghi điểm mới cho các học sinh này!`,
+      )
+    }
+
+    const executeSave = async () => {
+      setIsSubmittingMulti(true)
+      try {
+        const score = Math.max(0, Math.min(10, Number(multiScoreValue)))
+        await Promise.all(
+          selectedStudentIdsForMulti.map((sId) =>
+            onCreateAssessment({
+              studentId: sId,
+              title: multiScoreCategory,
+              score,
+              date: multiScoreDate,
+            }),
+          ),
+        )
+        setIsMultiScoreModalOpen(false)
+        setWarningDialog(null)
+      } finally {
+        setIsSubmittingMulti(false)
+      }
+    }
+
+    if (warnings.length > 0) {
+      setWarningDialog({
+        isOpen: true,
+        title: !hasAttendance
+          ? 'Cảnh báo: Chưa có dữ liệu điểm danh'
+          : 'Xác nhận cập nhật dữ liệu điểm số',
+        warnings,
+        type: !hasAttendance || existingAssessments.length > 0 ? 'danger' : 'warning',
+        confirmText: 'Vẫn tiếp tục lưu điểm',
+        onConfirm: executeSave,
+      })
+      return
+    }
+
+    await executeSave()
   }
 
   // Batch grade submit
   const handleOpenBatchModal = (catLabel: string) => {
+    const today = new Date().toISOString().slice(0, 10)
     setBatchCategory(catLabel)
-    setBatchDate(new Date().toISOString().slice(0, 10))
+    setBatchDate(today)
     setBatchScores({})
     setBatchQuickScore('')
     setIsBatchModalOpen(true)
   }
 
+  // Quick fill batch scores: default only to present students if attendance exists
+  const handleQuickFillBatch = () => {
+    if (batchQuickScore === '') return
+    const records = (attendance || []).filter((r) => r.date === batchDate)
+    const hasAttendance = records.length > 0
+    const presentSet = new Set(
+      records
+        .filter((r) => r.status === 'present' || r.status === 'late')
+        .map((r) => r.studentId),
+    )
+
+    const next: Record<string, string> = { ...batchScores }
+    for (const s of students) {
+      if (!hasAttendance || presentSet.has(s.id)) {
+        next[s.id] = batchQuickScore
+      }
+    }
+    setBatchScores(next)
+  }
+
+  // Handle Batch Scores Submit with Warnings
   const handleSaveBatchScores = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsSubmittingBatch(true)
-    try {
-      const promises: Promise<void>[] = []
-      for (const [sId, scoreVal] of Object.entries(batchScores)) {
-        if (scoreVal !== undefined && scoreVal.trim() !== '') {
-          const num = Number(scoreVal)
-          if (!isNaN(num) && num >= 0 && num <= 10) {
-            promises.push(
-              onCreateAssessment({
-                studentId: sId,
-                title: batchCategory,
-                score: num,
-                date: batchDate,
-              }),
-            )
+
+    const studentIdsWithScore = Object.entries(batchScores)
+      .filter(([_, scoreVal]) => scoreVal !== undefined && scoreVal.trim() !== '')
+      .map(([sId]) => sId)
+
+    if (studentIdsWithScore.length === 0) return
+
+    const dateRecords = (attendance || []).filter((r) => r.date === batchDate)
+    const hasAttendance = dateRecords.length > 0
+    const presentIds = new Set(
+      dateRecords
+        .filter((r) => r.status === 'present' || r.status === 'late')
+        .map((r) => r.studentId),
+    )
+
+    const absentWithScore = hasAttendance
+      ? studentIdsWithScore.filter((id) => !presentIds.has(id))
+      : []
+
+    const existingAssessments = assessments.filter(
+      (a) =>
+        a.date === batchDate &&
+        a.title === batchCategory &&
+        studentIdsWithScore.includes(a.studentId),
+    )
+
+    const warnings: string[] = []
+
+    if (!hasAttendance) {
+      warnings.push(
+        `Ngày ${batchDate} CHƯA CÓ dữ liệu điểm danh chuyên cần! Không thể xác định học sinh nào có mặt hay vắng mặt hôm đó.`,
+      )
+    }
+
+    if (absentWithScore.length > 0) {
+      warnings.push(
+        `Có ${absentWithScore.length} học sinh không có mặt vào ngày ${batchDate} nhưng vẫn được nhập điểm.`,
+      )
+    }
+
+    if (existingAssessments.length > 0) {
+      warnings.push(
+        `Đã có ${existingAssessments.length} học sinh có điểm "${batchCategory}" vào ngày ${batchDate}. Thao tác này sẽ lưu thêm điểm cho các học sinh này!`,
+      )
+    }
+
+    const executeBatchSave = async () => {
+      setIsSubmittingBatch(true)
+      try {
+        const promises: Promise<void>[] = []
+        for (const [sId, scoreVal] of Object.entries(batchScores)) {
+          if (scoreVal !== undefined && scoreVal.trim() !== '') {
+            const num = Number(scoreVal)
+            if (!isNaN(num) && num >= 0 && num <= 10) {
+              promises.push(
+                onCreateAssessment({
+                  studentId: sId,
+                  title: batchCategory,
+                  score: num,
+                  date: batchDate,
+                }),
+              )
+            }
           }
         }
+        await Promise.all(promises)
+        setIsBatchModalOpen(false)
+        setWarningDialog(null)
+      } finally {
+        setIsSubmittingBatch(false)
       }
-      await Promise.all(promises)
-      setIsBatchModalOpen(false)
-    } finally {
-      setIsSubmittingBatch(false)
+    }
+
+    if (warnings.length > 0) {
+      setWarningDialog({
+        isOpen: true,
+        title: !hasAttendance
+          ? 'Cảnh báo: Chưa có dữ liệu điểm danh'
+          : 'Xác nhận lưu điểm cả lớp',
+        warnings,
+        type: !hasAttendance || existingAssessments.length > 0 ? 'danger' : 'warning',
+        confirmText: 'Xác nhận lưu điểm',
+        onConfirm: executeBatchSave,
+      })
+      return
+    }
+
+    await executeBatchSave()
+  }
+
+  // Attendance badge component for list
+  const renderAttendanceBadge = (status?: AttendanceStatus) => {
+    if (!status) {
+      return (
+        <span className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-slate-400">
+          Chưa điểm danh
+        </span>
+      )
+    }
+    switch (status) {
+      case 'present':
+        return (
+          <span className="rounded-md border border-emerald-500/30 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+            ✓ Có mặt
+          </span>
+        )
+      case 'late':
+        return (
+          <span className="rounded-md border border-amber-500/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+            ⏰ Đi muộn
+          </span>
+        )
+      case 'absent':
+        return (
+          <span className="rounded-md border border-rose-500/30 bg-rose-500/15 px-2 py-0.5 text-[10px] font-semibold text-rose-300">
+            ✕ Vắng mặt
+          </span>
+        )
+      case 'excused':
+        return (
+          <span className="rounded-md border border-sky-500/30 bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-300">
+            📝 Nghỉ phép
+          </span>
+        )
+      case 'arts':
+        return (
+          <span className="rounded-md border border-purple-500/30 bg-purple-500/15 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+            🎵 Văn nghệ
+          </span>
+        )
+      case 'health':
+        return (
+          <span className="rounded-md border border-teal-500/30 bg-teal-500/15 px-2 py-0.5 text-[10px] font-semibold text-teal-300">
+            🩺 Y tế
+          </span>
+        )
     }
   }
 
@@ -721,7 +986,7 @@ export function StudentGradebook({
         </form>
       </Modal>
 
-      {/* Modal 2: 1 Score for Multiple Students (NEW) */}
+      {/* Modal 2: 1 Score for Multiple Students (NEW with Attendance filtering & Warning) */}
       <Modal
         isOpen={isMultiScoreModalOpen}
         onClose={() => setIsMultiScoreModalOpen(false)}
@@ -755,11 +1020,37 @@ export function StudentGradebook({
                 type="date"
                 required
                 value={multiScoreDate}
-                onChange={(e) => setMultiScoreDate(e.target.value)}
+                onChange={(e) => handleDateChangeForMulti(e.target.value)}
                 className="input-shell"
               />
             </div>
           </div>
+
+          {/* Attendance Status Notice Banner */}
+          {multiDateHasAttendance ? (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs text-emerald-200">
+              <div className="flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span>
+                  Đã có dữ liệu chuyên cần ngày <strong>{multiScoreDate}</strong>. Hệ thống mặc định chỉ chọn những học sinh <strong>có mặt trong lớp</strong>.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => autoSelectPresentStudentsForDate(multiScoreDate)}
+                className="rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-2.5 py-1 text-[11px] font-bold text-emerald-100 hover:bg-emerald-500/30 shrink-0"
+              >
+                Chỉ chọn HS có mặt
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Cảnh báo:</strong> Ngày <strong>{multiScoreDate}</strong> chưa có dữ liệu điểm danh chuyên cần! Hệ thống sẽ hỏi xác nhận và cảnh báo trước khi ghi đè hoặc lưu điểm.
+              </span>
+            </div>
+          )}
 
           {/* Score input with quick presets */}
           <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
@@ -809,7 +1100,7 @@ export function StudentGradebook({
             <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
                 <Users className="h-3.5 w-3.5 text-cyan-400" />
-                Chọn học sinh nhận điểm ({selectedStudentIdsForMulti.length} / {students.length} đã chọn)
+                Danh sách học sinh nhận điểm ({selectedStudentIdsForMulti.length} / {students.length} đã chọn)
               </label>
 
               <div className="flex items-center gap-2">
@@ -844,28 +1135,36 @@ export function StudentGradebook({
               />
             </div>
 
-            {/* Student checkboxes grid */}
-            <div className="max-h-[240px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-3 space-y-1.5">
+            {/* Student checkboxes grid with attendance indicator */}
+            <div className="max-h-[250px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-3 space-y-1.5">
               <div className="grid gap-2 sm:grid-cols-2">
                 {multiFilteredStudents.map((s) => {
                   const isChecked = selectedStudentIdsForMulti.includes(s.id)
+                  const attStatus = multiDateAttendanceMap.get(s.id)
+                  const isAbsent = attStatus === 'absent' || attStatus === 'excused'
+
                   return (
                     <label
                       key={s.id}
                       onClick={() => toggleStudentForMulti(s.id)}
-                      className={`flex items-center gap-2.5 rounded-xl border p-2 text-xs cursor-pointer select-none transition ${
+                      className={`flex items-center justify-between gap-2.5 rounded-xl border p-2.5 text-xs cursor-pointer select-none transition ${
                         isChecked
                           ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-100 shadow-sm'
+                          : isAbsent
+                          ? 'border-rose-500/20 bg-rose-500/5 text-slate-400 opacity-75'
                           : 'border-white/5 bg-white/[0.03] text-slate-300 hover:bg-white/[0.08]'
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {}} // handled on parent label click
-                        className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-400 focus:ring-cyan-400"
-                      />
-                      <span className="font-semibold truncate">{s.fullName}</span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {}} // handled on parent label click
+                          className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-cyan-400 focus:ring-cyan-400 shrink-0"
+                        />
+                        <span className="font-semibold truncate">{s.fullName}</span>
+                      </div>
+                      <div className="shrink-0">{renderAttendanceBadge(attStatus)}</div>
                     </label>
                   )
                 })}
@@ -896,7 +1195,7 @@ export function StudentGradebook({
                 disabled={isSubmittingMulti || selectedStudentIdsForMulti.length === 0}
                 className="soft-primary disabled:opacity-40"
               >
-                {isSubmittingMulti ? 'Đang lưu...' : `Lưu điểm (${selectedStudentIdsForMulti.length} HS)`}
+                {isSubmittingMulti ? 'Đang kiểm tra...' : `Lưu điểm (${selectedStudentIdsForMulti.length} HS)`}
               </button>
             </div>
           </div>
@@ -942,11 +1241,28 @@ export function StudentGradebook({
             </div>
           </div>
 
+          {/* Attendance notice in batch modal */}
+          {batchDateHasAttendance ? (
+            <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs text-emerald-200">
+              <UserCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>
+                Đã có dữ liệu chuyên cần ngày <strong>{batchDate}</strong>. Nút gán nhanh sẽ ưu tiên áp dụng cho các học sinh có mặt.
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>
+                <strong>Lưu ý:</strong> Ngày <strong>{batchDate}</strong> chưa có dữ liệu điểm danh. Hệ thống sẽ cảnh báo xác nhận khi lưu.
+              </span>
+            </div>
+          )}
+
           {/* Quick bulk fill for all inputs */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-slate-950/60 p-3">
             <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
               <Zap className="h-3.5 w-3.5 text-amber-300" />
-              Gán nhanh cùng 1 mức điểm cho tất cả học sinh:
+              Gán nhanh cùng 1 mức điểm cho các học sinh có mặt:
             </span>
             <div className="flex items-center gap-2">
               <input
@@ -961,46 +1277,50 @@ export function StudentGradebook({
               />
               <button
                 type="button"
-                onClick={() => {
-                  if (batchQuickScore !== '') {
-                    const next: Record<string, string> = {}
-                    for (const s of students) {
-                      next[s.id] = batchQuickScore
-                    }
-                    setBatchScores(next)
-                  }
-                }}
+                onClick={handleQuickFillBatch}
                 className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-3 py-1 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/25 transition"
               >
-                Áp dụng cả lớp
+                Áp dụng nhanh
               </button>
             </div>
           </div>
 
           <div className="max-h-[340px] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/60 p-4">
             <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-3">
-              {students.map((student) => (
-                <div
-                  key={student.id}
-                  className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 p-2.5"
-                >
-                  <span className="text-xs font-medium text-slate-200 truncate flex-1">
-                    {student.fullName}
-                  </span>
-                  <input
-                    type="number"
-                    step="0.1"
-                    min={0}
-                    max={10}
-                    placeholder="0-10"
-                    value={batchScores[student.id] ?? ''}
-                    onChange={(e) =>
-                      setBatchScores((prev) => ({ ...prev, [student.id]: e.target.value }))
-                    }
-                    className="w-16 rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-center text-xs font-bold text-cyan-300 outline-none focus:border-cyan-400"
-                  />
-                </div>
-              ))}
+              {students.map((student) => {
+                const attStatus = batchDateAttendanceMap.get(student.id)
+                const isAbsent = attStatus === 'absent' || attStatus === 'excused'
+
+                return (
+                  <div
+                    key={student.id}
+                    className={`flex items-center justify-between gap-2 rounded-xl border p-2.5 transition ${
+                      isAbsent
+                        ? 'border-rose-500/25 bg-rose-950/20'
+                        : 'border-white/10 bg-white/5'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="text-xs font-medium text-slate-200 truncate block">
+                        {student.fullName}
+                      </span>
+                      <div className="mt-0.5">{renderAttendanceBadge(attStatus)}</div>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={10}
+                      placeholder="0-10"
+                      value={batchScores[student.id] ?? ''}
+                      onChange={(e) =>
+                        setBatchScores((prev) => ({ ...prev, [student.id]: e.target.value }))
+                      }
+                      className="w-16 rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-center text-xs font-bold text-cyan-300 outline-none focus:border-cyan-400"
+                    />
+                  </div>
+                )
+              })}
             </div>
           </div>
 
@@ -1013,11 +1333,77 @@ export function StudentGradebook({
               Hủy bỏ
             </button>
             <button type="submit" disabled={isSubmittingBatch} className="soft-primary">
-              {isSubmittingBatch ? 'Đang lưu...' : 'Lưu tất cả điểm'}
+              {isSubmittingBatch ? 'Đang kiểm tra...' : 'Lưu tất cả điểm'}
             </button>
           </div>
         </form>
       </Modal>
+
+      {/* Warning & Confirmation Modal (NEW) */}
+      {warningDialog && (
+        <Modal
+          isOpen={warningDialog.isOpen}
+          onClose={() => setWarningDialog(null)}
+          title={warningDialog.title}
+          subtitle="Vui lòng kiểm tra kỹ các thông tin cảnh báo bên dưới trước khi lưu dữ liệu"
+          maxWidth="max-w-xl"
+        >
+          <div className="space-y-4">
+            <div
+              className={`rounded-2xl border p-4 ${
+                warningDialog.type === 'danger'
+                  ? 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+                  : 'border-amber-500/40 bg-amber-500/10 text-amber-200'
+              }`}
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  className={`h-6 w-6 shrink-0 mt-0.5 ${
+                    warningDialog.type === 'danger' ? 'text-rose-400' : 'text-amber-400'
+                  }`}
+                />
+                <div className="space-y-2">
+                  <h4 className="text-sm font-bold text-white">
+                    Các lưu ý quan trọng cần xác nhận:
+                  </h4>
+                  <ul className="list-disc pl-4 space-y-1.5 text-xs">
+                    {warningDialog.warnings.map((w, idx) => (
+                      <li key={idx} className="leading-relaxed">
+                        {w}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Bạn có chắc chắn muốn tiếp tục ghi nhận dữ liệu điểm này vào hệ thống không?
+            </p>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setWarningDialog(null)}
+                className="soft-secondary text-xs"
+              >
+                Hủy bỏ & Kiểm tra lại
+              </button>
+              <button
+                type="button"
+                onClick={() => void warningDialog.onConfirm()}
+                className={`inline-flex items-center justify-center rounded-2xl px-4 py-2 text-xs font-bold transition ${
+                  warningDialog.type === 'danger'
+                    ? 'bg-rose-500 text-white hover:bg-rose-400 shadow-lg shadow-rose-500/20'
+                    : 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-lg shadow-amber-500/20'
+                }`}
+              >
+                {warningDialog.confirmText}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Modal 4: Edit Existing Assessment Modal */}
       <EditAssessmentModal
