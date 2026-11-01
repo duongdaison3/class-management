@@ -20,6 +20,8 @@ import {
   WifiOff,
   Menu,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   EditSchoolModal,
@@ -32,9 +34,11 @@ import { StudentGradebook } from './components/StudentGradebook'
 import { ClassDojoRewards } from './components/ClassDojoRewards'
 import { EnhancedAttendance } from './components/EnhancedAttendance'
 import { useEffect, useMemo, useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import { useForm } from 'react-hook-form'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { z } from 'zod'
+import { gsap } from 'gsap'
 import type { Session } from '@supabase/supabase-js'
 import { ensureDemoData } from './data/seed'
 import { db, hydrateFromSupabase, queueSyncOperation, syncPendingQueue } from './lib/db'
@@ -615,7 +619,7 @@ function App() {
               className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity"
               onClick={() => setIsMobileMenuOpen(false)}
             />
-            <aside className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col liquid-glass bg-slate-950/95 border-r border-white/15 p-4 shadow-2xl overflow-y-auto">
+            <aside className="fixed inset-y-0 left-0 z-50 flex w-[min(88vw,20rem)] flex-col liquid-glass bg-slate-950/95 border-r border-white/15 p-4 shadow-2xl overflow-y-auto">
               <div className="flex items-center justify-between border-b border-white/10 pb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 shadow-md">
@@ -673,8 +677,8 @@ function App() {
             </aside>
           </div>
         )}
-        <div className="mx-auto flex max-w-[1600px]">
-          <aside className={`glass-sidebar hidden shrink-0 md:flex md:flex-col transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`}>
+        <div className="mx-auto flex min-h-dvh w-full max-w-[1600px]">
+          <aside className={`glass-sidebar sticky top-0 hidden h-dvh shrink-0 overflow-y-auto md:flex md:flex-col transition-[width] duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-72'}`}>
             <div className="flex items-center justify-between border-b border-white/10 p-4">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-violet-500 shadow-[0_18px_45px_rgba(14,165,233,0.35)]">
@@ -691,10 +695,10 @@ function App() {
               <button
                 type="button"
                 onClick={() => setIsSidebarCollapsed((current) => !current)}
-                className="soft-ghost h-9 w-9 rounded-xl p-0 text-slate-200"
+                className="soft-ghost h-11 w-11 rounded-xl p-0 text-slate-200"
                 aria-label={isSidebarCollapsed ? 'Mở rộng thanh menu' : 'Thu gọn thanh menu'}
               >
-                {isSidebarCollapsed ? '→' : '←'}
+                {isSidebarCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
               </button>
             </div>
 
@@ -755,7 +759,7 @@ function App() {
             </div>
           </aside>
 
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <header className="glass-header sticky top-0 z-20">
               <div className="flex items-center justify-between gap-4 px-4 py-4 md:px-8">
                 <div className="flex items-center gap-3">
@@ -847,8 +851,9 @@ function App() {
               </div>
             </header>
 
-            <main className="p-4 md:p-8">
-              <Routes>
+            <main className="page-main p-3 sm:p-5 lg:p-8">
+              <RouteMotion>
+                <Routes>
                 <Route
                   path="/"
                   element={
@@ -908,13 +913,45 @@ function App() {
                   path="/sync"
                   element={<SyncPage syncQueue={syncQueue} onSyncNow={handleSyncNow} isOnline={isOnline} />}
                 />
-              </Routes>
+                </Routes>
+              </RouteMotion>
             </main>
           </div>
         </div>
       </div>
     </BrowserRouter>
   )
+}
+
+function RouteMotion({ children }: { children: React.ReactNode }) {
+  const location = useLocation()
+  const stageRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const panels = stage.querySelectorAll('.panel, .liquid-glass, .liquid-card')
+    const context = gsap.context(() => {
+      gsap.fromTo(
+        stage,
+        { autoAlpha: 0, y: reduceMotion ? 0 : 10 },
+        { autoAlpha: 1, y: 0, duration: reduceMotion ? 0 : 0.38, ease: 'power3.out' },
+      )
+      if (!reduceMotion && panels.length > 0) {
+        gsap.fromTo(
+          panels,
+          { autoAlpha: 0, y: 8 },
+          { autoAlpha: 1, y: 0, duration: 0.3, stagger: 0.035, delay: 0.05, ease: 'power2.out' },
+        )
+      }
+    }, stage)
+
+    return () => context.revert()
+  }, [location.pathname])
+
+  return <div ref={stageRef}>{children}</div>
 }
 
 function LoadingScreen() {

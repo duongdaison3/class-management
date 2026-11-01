@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "installedAt": "2026-11-01T15:37:52.249Z",
+  "files": {
+    "E:\\class_management\\classroom-hub\\.claude\\settings.json": {
+      "plugins": [
+        "ruflo-mods@ruflo",
+        "ruflo-swarm@ruflo",
+        "ruflo-console@ruflo"
+      ],
+      "marketplace": true,
+      "env": true,
+      "claudeInstalled": []
+    }
+  }
+}
