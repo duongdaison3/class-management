@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import { Modal } from './Modal'
 import { EditAssessmentModal } from './EditModals'
-import type { Assessment, Student, AttendanceRecord, AttendanceStatus } from '../types'
+import { attendanceLabels, type Assessment, type Student, type AttendanceRecord, type AttendanceStatus } from '../types'
 
 export const STANDARD_CATEGORIES = [
   { id: 'oral', label: 'Điểm kiểm tra miệng', short: 'Miệng', weight: 1, tone: 'from-amber-400 to-orange-500' },
@@ -277,13 +277,39 @@ export function StudentGradebook({
   const handleSaveSingleScore = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newScoreData.studentId) return
-    await onCreateAssessment({
-      studentId: newScoreData.studentId,
-      title: newScoreData.categoryTitle,
-      score: Math.max(0, Math.min(10, Number(newScoreData.score))),
-      date: newScoreData.date,
-    })
-    setIsAddScoreOpen(false)
+
+    const attendanceRecord = attendance.find(
+      (record) => record.date === newScoreData.date && record.studentId === newScoreData.studentId,
+    )
+    const student = students.find((item) => item.id === newScoreData.studentId)
+    const executeSave = async () => {
+      await onCreateAssessment({
+        studentId: newScoreData.studentId,
+        title: newScoreData.categoryTitle,
+        score: Math.max(0, Math.min(10, Number(newScoreData.score))),
+        date: newScoreData.date,
+      })
+      setIsAddScoreOpen(false)
+      setWarningDialog(null)
+    }
+
+    if (!attendanceRecord || !['present', 'late'].includes(attendanceRecord.status)) {
+      setWarningDialog({
+        isOpen: true,
+        title: !attendanceRecord ? 'Cảnh báo: Chưa có dữ liệu điểm danh' : 'Xác nhận nhập điểm',
+        warnings: [
+          !attendanceRecord
+            ? `Ngày ${newScoreData.date} chưa có dữ liệu điểm danh. Không thể xác minh học sinh có mặt trong lớp hôm đó.`
+            : `${student?.fullName ?? 'Học sinh'} được ghi nhận trạng thái "${attendanceLabels[attendanceRecord.status]}" ngày ${newScoreData.date}.`,
+        ],
+        type: 'danger',
+        confirmText: 'Vẫn tiếp tục lưu điểm',
+        onConfirm: executeSave,
+      })
+      return
+    }
+
+    await executeSave()
   }
 
   // Auto-pick present students when date changes in Multi-Score Modal
@@ -1112,6 +1138,16 @@ export function StudentGradebook({
                   <CheckSquare className="h-3 w-3 mr-1" />
                   Chọn tất cả
                 </button>
+                {multiDateHasAttendance && (
+                  <button
+                    type="button"
+                    onClick={() => autoSelectPresentStudentsForDate(multiScoreDate)}
+                    className="soft-ghost text-xs py-1 px-2.5"
+                  >
+                    <UserCheck className="h-3 w-3 mr-1" />
+                    Chọn HS có mặt
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSelectedStudentIdsForMulti([])}
