@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 interface ModalProps {
@@ -11,6 +12,12 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = 'max-w-lg' }: ModalProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -27,13 +34,13 @@ export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = '
     }
   }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  if (!isOpen || !mounted) return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+  const modalContent = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity duration-300 animate-fadeIn"
+        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity duration-300 modal-backdrop-animate"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -43,10 +50,10 @@ export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = '
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={`relative z-10 w-full ${maxWidth} rounded-3xl border border-white/15 bg-slate-900/90 p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.15)] backdrop-blur-2xl transition-all duration-300 transform scale-100 my-8`}
+        className={`relative z-10 w-full ${maxWidth} max-h-[92vh] flex flex-col rounded-3xl border border-white/15 bg-slate-900/95 p-5 sm:p-6 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.15)] backdrop-blur-2xl transition-all duration-300 my-auto modal-box-animate`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-white/10 pb-4">
+        <div className="flex items-start justify-between border-b border-white/10 pb-4 shrink-0">
           <div>
             <h3 id="modal-title" className="text-xl font-bold tracking-tight text-white">
               {title}
@@ -56,15 +63,17 @@ export function Modal({ isOpen, onClose, title, subtitle, children, maxWidth = '
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400 transition hover:border-white/20 hover:bg-white/10 hover:text-white shrink-0 ml-4"
             aria-label="Đóng hộp thoại"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="mt-5">{children}</div>
+        <div className="mt-5 overflow-y-auto pr-1 flex-1 custom-scrollbar">{children}</div>
       </div>
     </div>
   )
+
+  return createPortal(modalContent, document.body)
 }

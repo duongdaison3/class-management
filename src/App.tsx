@@ -937,13 +937,31 @@ function RouteMotion({ children }: { children: React.ReactNode }) {
       gsap.fromTo(
         stage,
         { autoAlpha: 0, y: reduceMotion ? 0 : 10 },
-        { autoAlpha: 1, y: 0, duration: reduceMotion ? 0 : 0.38, ease: 'power3.out' },
+        {
+          autoAlpha: 1,
+          y: 0,
+          duration: reduceMotion ? 0 : 0.38,
+          ease: 'power3.out',
+          onComplete: () => {
+            gsap.set(stage, { clearProps: 'transform' })
+          },
+        },
       )
       if (!reduceMotion && panels.length > 0) {
         gsap.fromTo(
           panels,
           { autoAlpha: 0, y: 8 },
-          { autoAlpha: 1, y: 0, duration: 0.3, stagger: 0.035, delay: 0.05, ease: 'power2.out' },
+          {
+            autoAlpha: 1,
+            y: 0,
+            duration: 0.3,
+            stagger: 0.035,
+            delay: 0.05,
+            ease: 'power2.out',
+            onComplete: () => {
+              gsap.set(panels, { clearProps: 'transform' })
+            },
+          },
         )
       }
     }, stage)
